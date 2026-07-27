@@ -157,6 +157,10 @@ def test_phase01_real_run(raw_archive):
     georef = next(item for item in report.items if "Scan georeference" in item.item)
     assert "Phase 3 human sub-workflow" in georef.note
     assert "performed in QGIS (Phase 1 sub-workflow)" not in georef.note
+    handoff = next(item for item in report.items if "handoff scaffold emitted" in item.item)
+    assert handoff.decision is Decision.PASS
+    assert "index map remains an explicit placeholder" in handoff.note
+    assert not any(item.item == "Phase 1 handoff package complete" for item in report.items)
     assert 25000 in config.boundary.buffers_m
     decision = phase.gate(report, ctx)
     assert decision.status is GateStatus.GO, decision.reason

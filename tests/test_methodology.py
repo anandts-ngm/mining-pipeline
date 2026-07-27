@@ -25,7 +25,7 @@ from buduunkhad.geospatial_ai.methodology import (
 )
 from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 70)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 72)}
 METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
@@ -359,7 +359,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 70)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 72)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -395,7 +395,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
         replacement = by_id[item.superseded_by]  # ty: ignore[invalid-argument-type]
         assert replacement.status in {"resolved", "unresolved"}
     cyclic = {
-        "format_version": "1.4.0",
+        "format_version": "1.5.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-902"),
             _record("METH-DISC-902", status="superseded", superseded_by="METH-DISC-901"),
@@ -404,7 +404,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
     with pytest.raises(ValidationError, match="cyclic"):
         DiscrepancyRegistry.model_validate(cyclic)
     dangling = {
-        "format_version": "1.4.0",
+        "format_version": "1.5.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-999"),
         ],
@@ -441,6 +441,7 @@ def test_unresolved_view_filters_without_erasing_history() -> None:
         "METH-DISC-045",
         "METH-DISC-046",
         "METH-DISC-047",
+        "METH-DISC-070",
     }
     assert all(item.status == "unresolved" for item in historical)
 
@@ -604,9 +605,30 @@ def test_master_first_reconciliation_links_all_historical_policy_decisions() -> 
         assert record.approver is None
 
 
+def test_sentinel_extent_conflict_is_append_only_and_resolved() -> None:
+    registry = load_discrepancy_registry()
+    assert not registry.unresolved()
+    by_id = {item.discrepancy_id: item for item in registry.discrepancies}
+
+    conflict = by_id["METH-DISC-070"]
+    assert conflict.status == "unresolved"
+    assert "500 m or 1 km" in conflict.statement
+    assert "bare licence boundary" in conflict.statement
+    assert conflict.required_approver == "repository-owner or methodology-owner"
+    assert conflict.resolution is None
+
+    decision = by_id["METH-DISC-071"]
+    assert decision.status == "resolved"
+    assert decision.resolves_discrepancy_ids == ("METH-DISC-070",)
+    assert "plus 1 km buffer" in decision.resolution  # ty: ignore[unsupported-operator]
+    assert decision.approver == "repository-owner directive"
+    assert decision.resolved_on == "2026-07-27"
+    assert "METH-DISC-015" in decision.related_discrepancy_ids
+
+
 def test_phase04_master_aligned_target_is_typed_and_separate_from_legacy() -> None:
     contract = load_phase04_migration_contract()
-    assert contract.status == "specified-not-integrated"
+    assert contract.status == "implemented-inactive"
     assert contract.legacy_comparator_status == "retained-regression-only"
     assert contract.target_geometry == "human-reviewed-prospect-polygons"
     assert contract.scoring_source == "phase04.guide"
@@ -776,7 +798,12 @@ def test_phase02_processing_decisions_are_exact_and_support_only() -> None:
 
     contract = load_phase02_processing_contract()
     assert contract.scientific_use == "support-evidence-only"
-    assert contract.decision_sources == ("METH-DISC-052", "METH-DISC-053")
+    assert contract.format_version == "1.1.0"
+    assert contract.decision_sources == ("METH-DISC-052", "METH-DISC-053", "METH-DISC-071")
+    sentinel = contract.sentinel_profile
+    assert sentinel.input_numbers == (74, 77, 78)
+    assert sentinel.operation == "reproject-and-clip"
+    assert sentinel.clip_buffer_m == 1000
     basemaps = {item.input_number: item for item in contract.basemap_assets}
     assert basemaps[75].operation == "reproject-full-extent"
     assert basemaps[75].clip_buffer_m is None
@@ -795,6 +822,7 @@ def test_phase02_processing_decisions_are_exact_and_support_only() -> None:
     # The versioned contract freezes the current support-only implementation rather than
     # creating a second, drifting parameter source.
     params = HydrologyParams()
+    assert sentinel.clip_buffer_m == phase02_remote_sensing._SENTINEL_CLIP_M
     assert primary.clip_buffer_m == phase02_remote_sensing._DEM_CLIP_M
     assert basemaps[76].clip_buffer_m == phase02_remote_sensing._BASEMAP_CLIP_M
     assert params.contour_interval_m == primary.contour_interval_m
@@ -820,7 +848,7 @@ def test_resolution_links_fail_closed_and_preserve_append_only_history() -> None
     resolution = _record("METH-DISC-901", status="resolved")
     resolution["resolves_discrepancy_ids"] = ["METH-DISC-900"]
     registry = DiscrepancyRegistry.model_validate(
-        {"format_version": "1.4.0", "discrepancies": [unresolved, resolution]}
+        {"format_version": "1.5.0", "discrepancies": [unresolved, resolution]}
     )
     assert not registry.unresolved()
     assert tuple(item.discrepancy_id for item in registry.historical_unresolved()) == (
@@ -831,21 +859,21 @@ def test_resolution_links_fail_closed_and_preserve_append_only_history() -> None
     dangling["resolves_discrepancy_ids"] = ["METH-DISC-999"]
     with pytest.raises(ValidationError, match="unknown record"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.4.0", "discrepancies": [unresolved, dangling]}
+            {"format_version": "1.5.0", "discrepancies": [unresolved, dangling]}
         )
 
     duplicate = dict(resolution)
     duplicate["resolves_discrepancy_ids"] = ["METH-DISC-900", "METH-DISC-900"]
     with pytest.raises(ValidationError, match="contains duplicates"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.4.0", "discrepancies": [unresolved, duplicate]}
+            {"format_version": "1.5.0", "discrepancies": [unresolved, duplicate]}
         )
 
     forward = dict(resolution)
     forward["discrepancy_id"] = "METH-DISC-899"
     with pytest.raises(ValidationError, match="only earlier"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.4.0", "discrepancies": [forward, unresolved]}
+            {"format_version": "1.5.0", "discrepancies": [forward, unresolved]}
         )
 
 

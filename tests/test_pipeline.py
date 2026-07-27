@@ -354,7 +354,7 @@ def test_exact_operational_exception_is_scoped_and_recorded(raw_archive, monkeyp
     from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
 
     config, register, _raw = raw_archive
-    failure_item = "Phase 1 handoff package complete"
+    failure_item = "Phase 1 handoff scaffold emitted"
 
     def failed_qaqc(self, ctx):  # noqa: ARG001
         report = new_report("01", "Data audit")

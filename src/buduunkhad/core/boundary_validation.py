@@ -36,7 +36,9 @@ from buduunkhad.core.vector_io import BoundaryReadResult
 
 BOUNDARY_VALIDATION_FORMAT_VERSION = "1.0.0"
 BOUNDARY_REVIEW_FORMAT_VERSION = "1.0.0"
+BOUNDARY_ACCEPTANCE_FORMAT_VERSION = "1.0.0"
 BOUNDARY_VALIDATOR_COMPONENT = "buduunkhad.phase01.boundary-validation-v1"
+BOUNDARY_ACCEPTANCE_RESOLVER = "buduunkhad.phase01.boundary-acceptance-resolver-v1"
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonEmpty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -354,6 +356,54 @@ class BoundaryReviewAttestation(_BoundaryReviewIdentity):
         )
 
 
+class _BoundaryAcceptanceIdentity(_StrictModel):
+    format_version: Literal["1.0.0"] = BOUNDARY_ACCEPTANCE_FORMAT_VERSION
+    validation_id: Sha256
+    validation_file_sha256: Sha256
+    processing_run_id: NonEmpty
+    source_artifact: BoundFileIdentity
+    boundary_derivative: BoundFileIdentity
+    buffer_derivative: BoundFileIdentity
+    accepted_attestation_ids: tuple[Sha256, Sha256]
+    accepted_at: datetime
+    resolver_component: Literal["buduunkhad.phase01.boundary-acceptance-resolver-v1"] = (
+        BOUNDARY_ACCEPTANCE_RESOLVER
+    )
+
+    @model_validator(mode="after")
+    def _coherent_acceptance(self) -> _BoundaryAcceptanceIdentity:
+        if tuple(sorted(set(self.accepted_attestation_ids))) != self.accepted_attestation_ids:
+            raise ValueError("boundary acceptance attestations must be unique and ordered")
+        if self.accepted_at.tzinfo is None or self.accepted_at.utcoffset() is None:
+            raise ValueError("boundary acceptance time must be timezone-aware")
+        if self.accepted_at.utcoffset() != UTC.utcoffset(None):
+            raise ValueError("boundary acceptance time must be recorded in UTC")
+        return self
+
+
+class BoundaryAcceptanceRecord(_BoundaryAcceptanceIdentity):
+    """Resolved acceptance by both required roles; not geological evidence."""
+
+    acceptance_id: Sha256
+
+    @model_validator(mode="after")
+    def _sealed_identity(self) -> BoundaryAcceptanceRecord:
+        identity = _BoundaryAcceptanceIdentity.model_validate(
+            self.model_dump(mode="python", exclude={"acceptance_id"})
+        )
+        if self.acceptance_id != sha256_value(identity):
+            raise ValueError("boundary acceptance identity is invalid")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BoundaryAcceptanceRecord:
+        identity = _BoundaryAcceptanceIdentity.model_validate(values)
+        return cls(
+            **identity.model_dump(mode="python"),
+            acceptance_id=sha256_value(identity),
+        )
+
+
 def create_boundary_validation_record(
     *,
     processing_run_id: str,
@@ -506,6 +556,92 @@ def write_boundary_validation_record(record: BoundaryValidationRecord, path: Pat
     return path
 
 
+def create_boundary_review(
+    record_path: Path,
+    *,
+    reviewer: str,
+    reviewer_role: BoundaryReviewerRole,
+    reviewer_authorization_id: str,
+    reviewed_at: datetime,
+    decision: BoundaryReviewDecision,
+    rationale: str,
+    limitations: tuple[str, ...] = (),
+) -> BoundaryReviewAttestation:
+    """Create one named review bound to the exact persisted validation record."""
+
+    record = load_boundary_validation_record(record_path)
+    return BoundaryReviewAttestation.create(
+        validation_id=record.validation_id,
+        validation_file_sha256=sha256_file(Path(record_path)),
+        processing_run_id=record.processing_run_id,
+        reviewer=reviewer,
+        reviewer_role=reviewer_role,
+        reviewer_authorization_id=reviewer_authorization_id,
+        reviewed_at=reviewed_at,
+        decision=decision,
+        rationale=rationale,
+        limitations=tuple(sorted(set(limitations))),
+    )
+
+
+def resolve_boundary_acceptance(
+    record_path: Path,
+    *,
+    source_phase_root: Path,
+    phase_root: Path,
+    attestation_paths: tuple[Path, ...],
+) -> BoundaryAcceptanceRecord:
+    """Resolve exactly one accepted review from each required boundary role."""
+
+    record = load_boundary_validation_record(record_path)
+    if record.deterministic_status != "complete":
+        raise BoundaryValidationError("failed deterministic boundary validation cannot be accepted")
+    verify_boundary_validation_files(
+        record,
+        source_phase_root=source_phase_root,
+        phase_root=phase_root,
+    )
+    validation_hash = sha256_file(Path(record_path))
+    attestations = tuple(load_boundary_review(path) for path in attestation_paths)
+    if len(attestations) != 2:
+        raise BoundaryValidationError("boundary acceptance requires exactly two attestations")
+    expected_roles = {
+        BoundaryReviewerRole.DATA_CUSTODIAN,
+        BoundaryReviewerRole.QUALIFIED_REVIEWER,
+    }
+    if {item.reviewer_role for item in attestations} != expected_roles:
+        raise BoundaryValidationError("boundary acceptance requires both exact reviewer roles")
+    if any(
+        item.validation_id != record.validation_id
+        or item.validation_file_sha256 != validation_hash
+        or item.processing_run_id != record.processing_run_id
+        for item in attestations
+    ):
+        raise BoundaryValidationError("boundary review does not bind the exact validation record")
+    if any(item.decision is not BoundaryReviewDecision.ACCEPTED for item in attestations):
+        raise BoundaryValidationError("boundary acceptance requires two accepted decisions")
+    return BoundaryAcceptanceRecord.create(
+        validation_id=record.validation_id,
+        validation_file_sha256=validation_hash,
+        processing_run_id=record.processing_run_id,
+        source_artifact=record.source_artifact,
+        boundary_derivative=record.boundary_derivative,
+        buffer_derivative=record.buffer_derivative,
+        accepted_attestation_ids=tuple(sorted(item.attestation_id for item in attestations)),
+        accepted_at=max(item.reviewed_at for item in attestations),
+    )
+
+
+def write_boundary_authority_record(
+    record: BoundaryReviewAttestation | BoundaryAcceptanceRecord,
+    path: Path,
+) -> Path:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(record.model_dump_json(indent=2) + "\n", encoding="utf-8", newline="\n")
+    return target
+
+
 def load_boundary_validation_record(path: Path) -> BoundaryValidationRecord:
     """Load a record while rejecting duplicate JSON keys."""
 
@@ -514,6 +650,14 @@ def load_boundary_validation_record(path: Path) -> BoundaryValidationRecord:
         return BoundaryValidationRecord.model_validate(value)
     except (OSError, UnicodeError, ValueError) as exc:
         raise BoundaryValidationError("boundary validation record is invalid") from exc
+
+
+def load_boundary_review(path: Path) -> BoundaryReviewAttestation:
+    return _load_boundary_record(path, BoundaryReviewAttestation, "boundary review")
+
+
+def load_boundary_acceptance(path: Path) -> BoundaryAcceptanceRecord:
+    return _load_boundary_record(path, BoundaryAcceptanceRecord, "boundary acceptance")
 
 
 def verify_boundary_validation_files(
@@ -557,6 +701,14 @@ def _verify_file_identity(root: Path, identity: BoundFileIdentity) -> None:
         raise BoundaryValidationError(
             f"boundary validation artifact bytes changed: {identity.path}"
         )
+
+
+def _load_boundary_record(path: Path, model: type[_StrictModel], description: str):
+    try:
+        value = json.loads(Path(path).read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+        return model.model_validate(value)
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise BoundaryValidationError(f"{description} record is invalid") from exc
 
 
 def _geometry_types(gdf: Any) -> tuple[str, ...]:

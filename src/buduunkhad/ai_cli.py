@@ -332,6 +332,82 @@ def phase03_import_ai_draft(
     typer.echo("Original AI_DRAFT and authoritative Phase 03 evidence were not modified.")
 
 
+@phase03_ai_app.command("prepare-source")
+def phase03_prepare_source(
+    source: Path = typer.Option(..., "--source", exists=True, dir_okay=False),
+    run_id: str = typer.Option(..., "--run-id"),
+    provider: str = typer.Option("disabled", "--provider"),
+    model: str | None = typer.Option(None, "--model"),
+    tile_size: int = typer.Option(1024, "--tile-size", min=1),
+    overlap: int = typer.Option(128, "--overlap", min=0),
+    page_number: int = typer.Option(1, "--page-number", min=1),
+    render_scale: float = typer.Option(1.0, "--render-scale", min=0.01),
+    estimated_cost: float = typer.Option(0.0, "--estimated-cost", min=0),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Prepare locked legend and feature-proposal packages for one Phase 03 source."""
+
+    from buduunkhad.geospatial_ai.phase03_source_workflow import (
+        prepare_phase03_source_workflow,
+    )
+    from buduunkhad.geospatial_ai.requests import PreparedProvider
+    from buduunkhad.geospatial_ai.tiles import TileParameters
+
+    try:
+        project, roots = _context(config)
+        output, manifest = prepare_phase03_source_workflow(
+            source,
+            roots=roots,
+            run_id=run_id,
+            target_crs=project.crs.target_authority,
+            provider=cast(PreparedProvider, provider),
+            model=model,
+            tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
+            estimated_cost_usd=Decimal(str(estimated_cost)),
+            page_number=page_number,
+            render_scale=render_scale,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    typer.echo(f"Phase 03 source workflow: {output}")
+    typer.echo(f"Workflow ID: {manifest.workflow_id}")
+    typer.echo("No provider was contacted.")
+
+
+@phase03_ai_app.command("review-overlaps")
+def phase03_review_overlaps(
+    draft: Path = typer.Option(..., "--draft", exists=True, dir_okay=False),
+    run_id: str = typer.Option(..., "--run-id"),
+    output: Path = typer.Option(..., "--output", dir_okay=False),
+    duplicate_threshold: float = typer.Option(0.8, "--duplicate-threshold", min=0, max=1),
+    conflict_threshold: float = typer.Option(0.2, "--conflict-threshold", min=0, max=1),
+    continuity_tolerance: float = typer.Option(0.0, "--continuity-tolerance", min=0),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Report duplicate, conflicting, and possibly continuous draft features without editing."""
+
+    from buduunkhad.geospatial_ai.phase03_source_workflow import (
+        review_phase03_draft_overlaps,
+    )
+
+    try:
+        _project, roots = _context(config)
+        report = review_phase03_draft_overlaps(
+            draft,
+            roots=roots,
+            run_id=run_id,
+            output=output,
+            duplicate_overlap_threshold=duplicate_threshold,
+            conflict_overlap_threshold=conflict_threshold,
+            continuity_tolerance=continuity_tolerance,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    typer.echo(f"Phase 03 overlap review: {output}")
+    typer.echo(f"Review report ID: {report.report_id}")
+    typer.echo(f"Human resolution required: {report.review_required}")
+
+
 @phase03_ai_app.command("promote-reviewed")
 def phase03_promote_reviewed(
     review_package: Path = typer.Option(..., "--review-package", exists=True, file_okay=False),

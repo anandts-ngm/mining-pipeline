@@ -4,7 +4,7 @@ Implements the adopted automatable Phase 02 core recorded in
 ``config/methodology/phase02.yaml`` and the approved external methodology:
 
 1. Reproject every received raster to EPSG:32647 and **clip to the methodology's
-   per-product buffer** (DEM = 5 km, Sentinel = licence boundary, basemap = 1 km),
+   per-product buffer** (DEM = 5 km, Sentinel = 1 km, basemap = 1 km),
    writing Cloud-Optimized GeoTIFFs (tiled + internal overviews + lossless compression).
 2. Derive DEM terrain layers (multi-azimuth hillshade, slope, aspect, terrain
    ruggedness, profile/plan curvature, flow-accumulation) from the clipped DEMs.
@@ -23,6 +23,7 @@ from pathlib import Path
 
 from buduunkhad.core import (
     aster,
+    aster_readiness,
     dem,
     hydrology,
     lineaments,
@@ -70,13 +71,14 @@ _TERRAIN_INDEX_COLUMNS = [
 _DEM_ELEV = {9, 12}  # ASTER GDEM, ALOS-PALSAR DEM -> reproject+clip+COG + terrain derivatives
 _DEM_SUPPORT = {10, 16, 20}  # NumObservations (int), ALOS hillshade (float), ALOS slope (float)
 _DEM_CATEGORICAL = {10}  # only #10 (NumObservations) is a true count raster; #16 is continuous
-_SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(licence)+COG
+_SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(1 km)+COG
 _BASEMAP_NOCLIP = {75}  # 2.4 m Google basemap -> reproject only
 _BASEMAP_CLIP = {76}  # 0.15 m high-res basemap -> reproject + clip 1 km
 _KOMPSAT_BANDS = {24, 28, 32, 36, 40}  # method-note only (RPC ortho is external)
 _ASTER_HDF = {73}  # frozen support chain when HDF4-capable gdalwarp exists, else method note
 
 _DEM_CLIP_M = 5000
+_SENTINEL_CLIP_M = 1000
 _BASEMAP_CLIP_M = 1000
 
 # NumObservations (#10) is a uint8 count where 0 is a valid reading, so the clip must not leave
@@ -91,10 +93,10 @@ _SUPPORT_NODATA_FALLBACK: dict[int, float] = {10: 255.0}
 _SENTINEL_BAND_SUBSET: dict[int, tuple[int, ...]] = {78: (1, 2, 3)}
 
 # The Sentinel composites (#74, #77) are float32 with NO source nodata, so clipping to the
-# (non-rectangular) licence boundary fills ~36% out-of-licence margin with 0.0 that then reads as
-# valid reflectance. Flag the margin with -9999.0 (far outside any reflectance/index/RGB range) so
-# it is recorded as nodata — same fix class as #10 above. #78 already carries its own source nodata
-# and is left untouched (no entry here -> .get() returns None -> source nodata preserved).
+# non-rectangular licence-plus-1-km AOI can fill its bounding-box margin with 0.0 that then reads
+# as valid reflectance. Flag the margin with -9999.0 (far outside any reflectance/index/RGB range)
+# so it is recorded as nodata — same fix class as #10 above. #78 already carries its own source
+# nodata and is left untouched (no entry here -> .get() returns None -> source nodata preserved).
 _SENTINEL_NODATA_FALLBACK: dict[int, float] = {74: -9999.0, 77: -9999.0}
 
 # tokens stripped from a raw filename stem when building a clean output description
@@ -165,6 +167,8 @@ class Phase02RemoteSensing(Phase):
     _flow_skips: list[str]
     _aster_processed: bool
     _aster_targets: int
+    _aster_readiness_status: aster_readiness.AsterReadinessStatus | None
+    _aster_readiness_path: Path | None
     _aster_extras: list[Path]  # non-COG ASTER outputs (polygons gpkg, threshold register)
     _hydrology_note: str  # "" until attempted; then a produced/skipped summary
     _lineaments_note: str
@@ -181,6 +185,8 @@ class Phase02RemoteSensing(Phase):
         self._flow_skips = []
         self._aster_processed = False
         self._aster_targets = 0
+        self._aster_readiness_status = None
+        self._aster_readiness_path = None
         self._aster_extras = []
         self._hydrology_note = ""
         self._lineaments_note = ""
@@ -209,7 +215,7 @@ class Phase02RemoteSensing(Phase):
 
         epsg = cfg.target_epsg
         dem_aoi = self._load_buffer_aoi(ctx, _DEM_CLIP_M)
-        licence_aoi = self._load_boundary_aoi(ctx)
+        sentinel_aoi = self._load_buffer_aoi(ctx, _SENTINEL_CLIP_M)
         basemap_aoi = self._load_buffer_aoi(ctx, _BASEMAP_CLIP_M)
 
         dem_reproj_dir = pdir / "04_ALOS_ASTERGDEM_GlobalMapper_QGIS" / "03_Reproject_Clip"
@@ -222,7 +228,7 @@ class Phase02RemoteSensing(Phase):
                 self._rows.append(self._do_aster(ctx, rec, pdir, dem_aoi))
                 continue
             if rec.no in _KOMPSAT_BANDS:
-                self._rows.append(self._note_row(rec, "KOMPSAT band → RPC ortho method note"))
+                self._rows.append(self._note_row(ctx, rec, "KOMPSAT band → RPC ortho method note"))
                 continue
             if rec.file_type != "raster":
                 continue  # sidecars / browse / thumbnail / pdf
@@ -250,10 +256,10 @@ class Phase02RemoteSensing(Phase):
                     self._do_passthrough(
                         ctx,
                         rec,
-                        aoi=licence_aoi,
+                        aoi=sentinel_aoi,
                         dest_dir=sentinel_dir,
                         epsg=epsg,
-                        clip_label="Licence",
+                        clip_label=f"{_SENTINEL_CLIP_M // 1000}km",
                         compress="DEFLATE",
                         categorical=False,
                         band_subset=_SENTINEL_BAND_SUBSET.get(rec.no),
@@ -343,20 +349,6 @@ class Phase02RemoteSensing(Phase):
         sub = gdf[gdf["distance_m"] == distance_m]
         return sub if len(sub) else None
 
-    def _load_boundary_aoi(self, ctx: RunContext):
-        cfg = ctx.config
-        name = naming.data_name(
-            cfg.data_prefix,
-            f"{cfg.project.license_code}_LicenseBoundary",
-            crs_or_param=naming.epsg_tag(cfg.target_epsg),
-            version=1,
-            ext="gpkg",
-        )
-        path = self._phase01_gpkg_dir(ctx) / name
-        if not path.exists():
-            return None
-        return vector_io.read_layer(path, "license_boundary")
-
     # ------------------------------------------------------------------ #
     # per-raster processing
     # ------------------------------------------------------------------ #
@@ -378,7 +370,7 @@ class Phase02RemoteSensing(Phase):
     ) -> dict[str, object]:
         cfg = ctx.config
         action = "reproject+clip+COG" if require_aoi else "reproject+COG"
-        row = self._base_row(rec, action=action, clip_label=clip_label, compress=compress)
+        row = self._base_row(ctx, rec, action=action, clip_label=clip_label, compress=compress)
         wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
         if not wc.exists():
             self._failed += 1
@@ -525,13 +517,21 @@ class Phase02RemoteSensing(Phase):
         result.add_output(index_path)
         result.add_output(report_path)
 
-    def _base_row(self, rec, *, action: str, clip_label: str, compress: str) -> dict[str, object]:
+    def _base_row(
+        self,
+        ctx: RunContext,
+        rec,
+        *,
+        action: str,
+        clip_label: str,
+        compress: str,
+    ) -> dict[str, object]:
         return {
             "no": rec.no,
             "filename": rec.filename,
             "source_group": rec.evidence_group,
             "native_epsg": "",
-            "output_crs": f"EPSG:{32647}",
+            "output_crs": f"EPSG:{ctx.config.target_epsg}",
             "processing_action": action,
             "clip_buffer": clip_label,
             "compression": compress,
@@ -557,39 +557,63 @@ class Phase02RemoteSensing(Phase):
         provisional data gap under METH-READY-003.
         """
         row = self._base_row(
+            ctx,
             rec,
-            action="HDF4 extract → EPSG:32647 → frozen alteration support score",
+            action=(
+                f"HDF4 extract → EPSG:{ctx.config.target_epsg} → frozen alteration support score"
+            ),
             clip_label="Full scene",
             compress="DEFLATE",
         )
         wc = ctx.phase_dir("00") / rec.evidence_group / rec.filename
         if not wc.exists():
             row.update(
-                output_crs="EPSG:32647 (target)",
+                output_crs=f"EPSG:{ctx.config.target_epsg} (target)",
                 decision="Method-note",
                 note="working copy missing (run Phase 00 first) — method-note fallback.",
             )
             return row
         gdalwarp = aster.find_hdf4_gdalwarp()
         if gdalwarp is None:
+            readiness = self._write_aster_readiness(
+                ctx,
+                source=wc,
+                phase_root=pdir,
+                gdalwarp=None,
+                finding="ASTER processing was unavailable because HDF4-capable GDAL was absent.",
+            )
             row.update(
-                output_crs="EPSG:32647 (target)",
+                output_crs=f"EPSG:{ctx.config.target_epsg} (target)",
                 decision="Method-note",
                 note="No HDF4-capable GDAL found (install QGIS or set BUDUUNKHAD_GDAL_BIN) — "
-                "method-note fallback.",
+                f"method-note fallback; readiness={readiness.status.value}.",
             )
             return row
         try:
             res = self._run_aster_chain(ctx, wc, pdir / "02_ASTER_Workflow_v5", gdalwarp, stats_aoi)
         except Exception as exc:  # noqa: BLE001 - degrade to the note, keep the batch going
             ctx.logger.warning("ASTER chain failed; method-note fallback: %s", exc)
+            readiness = self._write_aster_readiness(
+                ctx,
+                source=wc,
+                phase_root=pdir,
+                gdalwarp=gdalwarp,
+                finding=f"ASTER processing failed: {type(exc).__name__}: {str(exc)[:200]}",
+            )
             row.update(
-                output_crs="EPSG:32647 (target)",
+                output_crs=f"EPSG:{ctx.config.target_epsg} (target)",
                 decision="Method-note",
                 note=f"ASTER processing failed ({type(exc).__name__}: {str(exc)[:160]}) — "
-                "method-note fallback.",
+                f"method-note fallback; readiness={readiness.status.value}.",
             )
             return row
+        readiness = self._write_aster_readiness(
+            ctx,
+            source=wc,
+            phase_root=pdir,
+            gdalwarp=gdalwarp,
+            output_rasters=(*res.band_files, *res.index_files, *res.score_files),
+        )
         self._aster_processed = True
         self._aster_targets = res.n_targets
         score_file = res.score_files[-1] if res.score_files else None
@@ -601,9 +625,43 @@ class Phase02RemoteSensing(Phase):
             f"+ score + {res.n_targets} target polygon(s)",
             decision="Pass",
             note="Frozen support chain: 11 bands → 7 indices → mean+1.5σ binaries → weighted score "
-            "(2·clay+ferric+chlorite+silica) → targets ≥3.",
+            "(2·clay+ferric+chlorite+silica) → targets ≥3; "
+            f"readiness={readiness.status.value}.",
         )
         return row
+
+    def _write_aster_readiness(
+        self,
+        ctx: RunContext,
+        *,
+        source: Path,
+        phase_root: Path,
+        gdalwarp: Path | None,
+        output_rasters: tuple[Path, ...] = (),
+        finding: str | None = None,
+    ) -> aster_readiness.AsterReadinessRecord:
+        record = aster_readiness.validate_aster_readiness(
+            source_run_id=ctx.source_run_id_for("00"),
+            processing_run_id=ctx.run_id,
+            source_phase_root=ctx.phase_dir("00"),
+            source_path=source,
+            phase_root=phase_root,
+            target_epsg=ctx.config.target_epsg,
+            gdalwarp=gdalwarp,
+            output_rasters=output_rasters,
+            processing_finding=finding,
+        )
+        path = (
+            phase_root
+            / "02_ASTER_Workflow_v5"
+            / "06_QAQC"
+            / f"{ctx.config.register_prefix}_ASTER_HDF_Readiness_Record.json"
+        )
+        aster_readiness.write_aster_readiness_record(record, path)
+        self._aster_readiness_status = record.status
+        self._aster_readiness_path = path
+        self._aster_extras.append(path)
+        return record
 
     def _run_aster_chain(
         self,
@@ -780,9 +838,15 @@ class Phase02RemoteSensing(Phase):
             "(machine draft — geologist review required)"
         )
 
-    def _note_row(self, rec, action: str) -> dict[str, object]:
-        row = self._base_row(rec, action=action, clip_label="(external)", compress="(n/a)")
-        row.update(output_crs="EPSG:32647 (target)", decision="Method-note")
+    def _note_row(self, ctx: RunContext, rec, action: str) -> dict[str, object]:
+        row = self._base_row(
+            ctx,
+            rec,
+            action=action,
+            clip_label="(external)",
+            compress="(n/a)",
+        )
+        row.update(output_crs=f"EPSG:{ctx.config.target_epsg} (target)", decision="Method-note")
         row["note"] = "External tool step — see method note in the sensor subfolder."
         return row
 
@@ -834,7 +898,7 @@ class Phase02RemoteSensing(Phase):
 
         any_fail = any(r.get("decision") == "Fail" for r in self._rows)
         report.add(
-            "Rasters reprojected/clipped to EPSG:32647 (per-product buffer)",
+            f"Rasters reprojected/clipped to EPSG:{ctx.config.target_epsg} (per-product buffer)",
             RECORDED_ACCEPTANCE,
             decision=Decision.FAIL if any_fail else Decision.PASS,
             note=f"{self._reprojected} reprojected/clipped; {self._skipped} skipped (no overlap); "
@@ -873,6 +937,17 @@ class Phase02RemoteSensing(Phase):
                 if self._aster_processed
                 else "Method-note fallback (no HDF4-capable GDAL, or extraction failed) — "
                 "acceptable: ASTER is support evidence."
+            ),
+        )
+        report.add(
+            "ASTER exact-source technical readiness recorded",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if self._aster_readiness_path is not None else Decision.FAIL,
+            note=(
+                f"Machine-readable result: {self._aster_readiness_status.value}; "
+                "technical readiness remains distinct from geological acceptance."
+                if self._aster_readiness_status is not None
+                else "No exact-source ASTER readiness record was emitted."
             ),
         )
         hydro_ok = self._hydrology_note and not self._hydrology_note.startswith(
@@ -922,7 +997,8 @@ _SENTINEL_NOTE = (
     "# Phase 02 — Sentinel-2 indices/masks/composites (orchestrated)\n\n"
     "Our raw Sentinel inputs (#74/#77/#78) are *received composites / ratio stacks*, not the\n"
     "individual bands B02–B12, so the pipeline only **reprojects them to EPSG:32647 and clips to\n"
-    "the licence boundary** (see 06_Export_EPSG32647). The products below need the band stack\n"
+    "the licence boundary plus the adopted 1 km context** (METH-DISC-071; see\n"
+    "06_Export_EPSG32647). The products below need the band stack\n"
     "(SNAP 13.0.0 Sen2Cor L1C→L2A, then resample B11/B12 to 10 m). Place results here / in\n"
     "03_Masks / 05_Composites and log them.\n\n"
     "Formulas (EPSG:32647, 10 m, bilinear):\n"

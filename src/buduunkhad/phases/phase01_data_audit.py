@@ -110,7 +110,7 @@ class Phase01DataAudit(Phase):
                 result.add_output(path)
             result.log(
                 "dry-run: master GPKG schema + layered QGIS project + empty CRS/confidence "
-                "logs + Phase 1 handoff package"
+                "logs + Phase 1 handoff scaffold"
             )
             return result
 
@@ -625,10 +625,13 @@ class Phase01DataAudit(Phase):
                 note="QGIS project written with project CRS EPSG:32647.",
             )
             report.add(
-                "Phase 1 handoff package complete",
+                "Phase 1 handoff scaffold emitted",
                 RECORDED_ACCEPTANCE,
                 decision=Decision.PASS if len(self._handoff_paths) == 5 else Decision.FAIL,
-                note=f"{len(self._handoff_paths)} handoff artifact(s) written.",
+                note=(
+                    f"{len(self._handoff_paths)} handoff scaffold artifact(s) written; "
+                    "the index map remains an explicit placeholder pending real map rendering."
+                ),
             )
             return report
 
@@ -694,10 +697,13 @@ class Phase01DataAudit(Phase):
             note=f"{len(self._master_layers)}/{len(expected)} expected layers present.",
         )
         report.add(
-            "Phase 1 handoff package complete",
+            "Phase 1 handoff scaffold emitted",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if len(self._handoff_paths) == 5 else Decision.FAIL,
-            note=f"{len(self._handoff_paths)} handoff artifact(s) written.",
+            note=(
+                f"{len(self._handoff_paths)} handoff scaffold artifact(s) written; "
+                "the index map remains an explicit placeholder pending real map rendering."
+            ),
         )
         return report
 
@@ -844,7 +850,7 @@ def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Pa
     doc.add_paragraph("This readiness summary is generated from the configured 79-input register.")
     doc.add_paragraph("It does not interpret ore potential or process real raw data.")
 
-    doc.add_heading("Phase 1 Handoff Status", level=2)
+    doc.add_heading("Phase 1 Handoff Scaffold Status", level=2)
     checks = [
         "Master GIS database schema created.",
         "Master QGIS project placeholder created with EPSG:32647 project CRS.",
@@ -874,7 +880,7 @@ def _write_index_map_placeholder(path: Path, ctx: RunContext) -> Path:
         f"License: {ctx.config.project.license_code}",
         f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}",
         "Map production requires QGIS rendering after real raw data sync.",
-        "Use this placeholder to keep the Phase 1 handoff package complete.",
+        "This placeholder records that final index-map rendering remains incomplete.",
     ]
     return _write_simple_pdf(path, lines)
 

@@ -41,6 +41,7 @@ from buduunkhad.pipeline import (
     run_pipeline,
     validate_raw_inputs,
 )
+from buduunkhad.readiness_cli import readiness_app
 
 # Run-start failures that should surface as a clean red message + non-zero exit.
 _RUN_ERRORS = (
@@ -60,6 +61,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(ai_app, name="ai")
+app.add_typer(readiness_app, name="readiness")
 evidence_app = typer.Typer(
     add_completion=False,
     help="Verify immutable evidence authority selected by manifest identity.",

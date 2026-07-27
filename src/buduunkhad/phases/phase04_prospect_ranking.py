@@ -4,8 +4,8 @@ Turns the Phase 03 geological-evidence package into ranked preliminary prospects
 methodology (master workflow + the Phase-4 guide §6 **desktop scoring matrix**): build an
 evidence-scoring grid over the licence AOI, score each cell on the 8-criterion weighted matrix
 (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / deposit-model fit 10 / access 5 /
-confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the
-**A/B/C/D** field-priority class (A>=75, B 55-74, C 35-54, D<35), wire in the Phase 03 03A
+confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the legacy
+**A/B/C/D** comparator class (A>=75, B 55-74, C 35-54, D<35), wire in the Phase 03 03A
 deposit-model outputs, and emit the four deliverables. The guide's matrix is desktop-only (no
 field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
 well-evidenced desktop prospect CAN reach class A.
@@ -21,9 +21,10 @@ filenames, layer-name keywords, and directory proximity have no authority. Phase
 evidence remains ineligible until a separately approved authoritative integration adapter exists.
 
 **Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
-``model_fit`` until the human completes the 03A score matrix, ``access`` without a roads layer)
-score **0** and are flagged as data gaps. Every output is stamped *"Preliminary — not ore proof"* —
-class A here still means "field/lab follow-up priority", never a confirmed deposit.
+``model_fit`` until the human completes the 03A score matrix, ``access`` until a separately
+reviewed exact-role adapter admits road evidence) score **0** and are flagged as data gaps. Every
+output is stamped *"Preliminary — not ore proof"* — class A is an expert-review signal, never a
+confirmed deposit or operational decision.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ PROSPECT_CRITERIA: list[tuple[str, int, bool]] = [
     ("rs", 15, False),  # ASTER/Sentinel/KOMPSAT indication (§6.5); needs fed alteration
     ("structure", 10, True),  # fault/shear/lineament control (§6.6)
     ("model_fit", 10, False),  # Phase 03 03A deposit-model fit (§6.7); pending human matrix
-    ("access", 5, False),  # road/terrain/logistics (§6.8); needs a roads layer
+    ("access", 5, False),  # road/terrain/logistics (§6.8); no exact-role adapter yet
     ("confidence", 5, True),  # evidence completeness / traceability (§6.9); always derivable
 ]
 _CRIT_WEIGHT = {k: w for k, w, _ in PROSPECT_CRITERIA}
@@ -69,14 +70,14 @@ GRID_CELL_M = 250.0
 CONTEXT_BUFFER_M = 1000.0  # grid the licence boundary + this context margin
 SCORE_THRESHOLD = 35  # the C floor: only A/B/C-band cells become prospect polygons (D excluded)
 OCCURRENCE_NEAR_M = 750.0  # "near a known occurrence" proximity (human-ref threshold)
-ACCESS_NEAR_M = 1500.0  # "accessible" = within this of a road (human-ref threshold)
+ACCESS_NEAR_M = 1500.0  # frozen comparator threshold; inactive until exact-role access evidence
 
 _PROSPECT_LAYER = "prospect_candidate_areas"
 _GRID_LAYER = "evidence_score_grid"
 _FEATURE_PREFIX = "BUD-PSP"  # Appendix-A style id for preliminary prospects
 
 
-# A/B/C/D field-priority bands (v9 §5).
+# Frozen A/B/C/D legacy-comparator class bands (Phase-4 guide §6).
 def classify(score: float) -> str:
     if score >= 75:
         return "A"
@@ -191,8 +192,8 @@ _RECOMMENDED_FOLLOWUP = (
     "rock-chip + soil/stream-sediment follow-up."
 )
 
-# Attribute-evidence roles (Phase 04 reads these WITH attributes, from any gpkg dropped under the
-# Phase 03/04 dirs, keyed by filename/layer keyword — whitelisted so pipeline outputs never match).
+# Attribute evidence enters only through selected, immutable evidence manifests and exact roles;
+# filenames, layer-name keywords, copied files and directory proximity never establish authority.
 # `rs` scores only FOCUSED alteration (argillic/porphyry/sericite/silica + hand-digitized alteration)
 # — the methodology's high-score indicator. Regional chlorite-epidote *propylitic halo* is deliberately
 # excluded: it blankets the district and would re-saturate the score (it's context, not a target).
@@ -204,7 +205,10 @@ class Phase04ProspectRanking(Phase):
     name = "Preliminary Prospect Delineation and Ranking"
     mode = "build"
     input_numbers = [*range(1, 9), *range(47, 79)]
-    gate_condition = "A/B prospects selected for drone/recon; C/D retained with data gaps."
+    gate_condition = (
+        "A/B comparator signals advance only to qualified expert review; C/D remain comparator "
+        "results with explicit data gaps and no scientific or operational approval."
+    )
     custom_subfolders = [
         "01_Evidence_Overlay",
         "02_Prospect_Polygon_Delineation",
@@ -500,7 +504,7 @@ class Phase04ProspectRanking(Phase):
         # prospects, C cells -> retained C prospects (D = below the C floor, not a prospect).
         # A single >=threshold dissolve would merge the whole evidence-rich zone into one blob;
         # banded dissolve yields the discrete, per-priority cores the methodology's A/B/C/D
-        # decision gate acts on (A/B -> drone/recon; C retained with data gaps).
+        # comparator review signal acts on (A/B -> expert review; C retained with data gaps).
         prospects: list[dict] = []
         for cls in ("A", "B", "C"):
             sub = cells[cells["priority"] == cls].copy()
@@ -582,9 +586,6 @@ class Phase04ProspectRanking(Phase):
                 return falses
             return cells.geometry.intersects(unary_union(geoms))
 
-        alter_layers = [k for k in ev if "alter" in k.lower() or "aster" in k.lower()]
-        road_layers = [k for k in ev if "road" in k.lower()]
-
         def _has(layers: list[str]) -> bool:
             for x in layers:
                 g = ev.get(x)
@@ -604,12 +605,14 @@ class Phase04ProspectRanking(Phase):
             ),
             "occurrence": _has(["mineral_occurrences_point", "mineralized_points_point"]),
             "geochem": attr.get("geochem_union") is not None,
-            "rs": bool(alter_layers) or attr.get("alteration") is not None,
+            "rs": attr.get("alteration") is not None,
             "structure": _has(
                 ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"]
             ),
             "model_fit": bool(self._model_fit["available"]),
-            "access": bool(road_layers),
+            # Access stays unavailable until a separately reviewed exact-role adapter admits it.
+            # Filename or layer-name keywords never confer evidence authority.
+            "access": False,
             "confidence": True,  # §6.9 completeness is always derivable
         }
         # §6.9 confidence points = evidence completeness across the 7 evidence criteria.
@@ -635,14 +638,14 @@ class Phase04ProspectRanking(Phase):
             # geochem (§6.4): inside an attribute-bearing geochem-anomaly polygon.
             "geochem": hit(attr.get("geochem_union")),
             # rs (§6.5): overlaps a focused ASTER/alteration polygon (attribute-evidence path).
-            "rs": present(alter_layers) | hit(attr.get("alteration")),
+            "rs": hit(attr.get("alteration")),
             # structure (§6.6): near a fault / dyke / intrusive contact.
             "structure": present(
                 ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"], GRID_CELL_M
             ),
             # model_fit (§6.7) + confidence (§6.9) are run-level (not spatial): applied uniformly.
             "model_fit": trues if int(str(self._model_fit["score"])) > 0 else falses,
-            "access": present(road_layers, ACCESS_NEAR_M),
+            "access": falses,
             "confidence": trues if confidence_pts > 0 else falses,
         }
         # per-criterion points: spatial criteria award the full §6 band weight on presence;
@@ -813,7 +816,7 @@ class Phase04ProspectRanking(Phase):
                     "rs": "02 (ASTER/Sentinel — external SNAP/ILWIS) or ingested alteration layer",
                     "geochem": "ingested geochem-anomaly polygons (attribute evidence)",
                     "model_fit": "03 (human completes the 03A deposit-model score matrix)",
-                    "access": "human roads layer / field recon",
+                    "access": "separately admitted exact-role road evidence / field recon",
                 }.get(k, "—"),
                 "note": ""
                 if self._criteria_available.get(k)
@@ -870,7 +873,8 @@ class Phase04ProspectRanking(Phase):
             f"config/methodology/discrepancies.yaml, METH-DISC-006.)\n\n"
             f"Grid {int(GRID_CELL_M)} m over the licence + {int(CONTEXT_BUFFER_M)} m context; each cell "
             f"scores a criterion's full weight when its evidence is present (occurrence proximity "
-            f"{int(OCCURRENCE_NEAR_M)} m, access {int(ACCESS_NEAR_M)} m). Geology scores near unit "
+            f"{int(OCCURRENCE_NEAR_M)} m). Access remains a zero-scored data gap until a separately "
+            f"reviewed exact-role adapter admits authoritative road evidence. Geology scores near unit "
             f"**contacts** (polygon boundaries + intrusive contacts), not blanket interiors, and CMCS "
             f"scores **localized** nearest-deposit/metallogenic context, not the whole filled buffer — "
             f"so scores discriminate rather than saturate. Cells are dissolved into candidate "
@@ -878,15 +882,19 @@ class Phase04ProspectRanking(Phase):
             f"D = below the {SCORE_THRESHOLD} C-floor, not a prospect); class bands A>=75, B 55-74, "
             f"C 35-54, D<35.\n\n"
             f"## Attribute-aware evidence\n"
-            f"Attribute-bearing layers dropped under the Phase 03/04 dirs are read for richer scoring: "
-            f"focused alteration (argillic/porphyry/sericite/silica or hand-digitized) activates `rs`; "
-            f"geochem-anomaly polygons drive `geochem` + populate `elements`. Regional chlorite-epidote "
-            f"propylitic halo is excluded as context (it blankets the district).\n\n"
+            f"Only selected, immutable evidence manifests and their exact catalog-admitted roles "
+            f"can supply attribute-bearing evidence. Focused alteration "
+            f"(argillic/porphyry/sericite/silica or reviewed hand-digitized evidence) activates "
+            f"`rs`; geochem-anomaly polygons drive `geochem` + populate `elements`. Filenames, "
+            f"layer-name keywords, copied files and directory proximity have no authority. "
+            f"Regional chlorite-epidote propylitic halo is excluded as context (it blankets the "
+            f"district).\n\n"
             f"## Data gaps (scored 0)\n"
             f"`rs` without fed focused alteration; `model_fit` until the 03A score matrix is "
-            f"human-completed; `access` without a roads layer. `confidence` (5) grades evidence "
-            f"completeness. Field/pXRF/drone evidence enters at Phases 05-06 and is scored by the "
-            f"v9 §5 lifecycle matrix at Phase 10.\n\n"
+            f"human-completed; `access` until a separately reviewed exact-role adapter admits "
+            f"authoritative road evidence. `confidence` (5) grades evidence completeness. "
+            f"Field/pXRF/drone evidence enters at Phases 05-06 and is scored by the v9 §5 "
+            f"lifecycle matrix at Phase 10.\n\n"
             f"## Ranking map\n`..._Preliminary_Prospect_Ranking_Map.pdf` is a QGIS print layout "
             f"over the prospect polygons (human deliverable); the pipeline emits the polygons, "
             f"ranking table, legacy compatibility decision matrix and data-gap register. The "
@@ -959,8 +967,9 @@ class Phase04ProspectRanking(Phase):
             "Field access and safety checked",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
-            note="Access scored from roads layer where present; field access/safety confirmed by "
-            "human before drone/recon (desktop data gap).",
+            note="The current comparator admits no authoritative access role, so access remains "
+            "zero-scored; a human must confirm field access/safety before any field or drone "
+            "decision.",
         )
         report.add(
             "Desktop-unavailable criteria recorded as data gaps",

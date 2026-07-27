@@ -53,6 +53,7 @@ boundaries:
     deterministic_authority:
       - Scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, exact manifest-resolved support-evidence ingest, and the opt-in AI-draft review packaging and promotion.
       - Evidence roles must own their exact Phase 03 target layers, and catalog admission plus predecessor-run identities remain bound into the consuming run.
+      - Source-specific legend/feature request preparation, non-destructive overlap review, structured 03A evidence/critique records and exact scientific-handoff resolution.
     human_review_boundary:
       - Digitizing, georeferencing acceptance, the 03A deposit-model matrix, and every handoff review decision.
     ai_permitted:
@@ -71,13 +72,14 @@ boundaries:
       - Evidence grid, scoring arithmetic, class banding, prospect dissolution, ranking and go/no-go tables.
       - Attribute-bearing support evidence only when its exact artifact, layer, role and legacy-comparator eligibility resolve through an immutable evidence manifest.
       - Phase 01 and Phase 03 inputs come from the same run or exact sealed predecessor-run bindings; a blocked Phase 03 gate cannot supply the comparator.
+      - A separate inactive prospect-polygon implementation measures reviewed geometry and applies only exact human score judgments after Phase 03 handoff and two-role activation.
     human_review_boundary:
       - Scoring-matrix changes; supply of the roads layer and the completed 03A model-fit source.
     ai_prohibited:
       - Consuming AI-lifecycle or handoff evidence without the approved authoritative adapter.
       - Recalibrating the adopted scoring matrix as an incidental change.
     blocking_dependencies:
-      - The master-aligned prospect-polygon target is specified in phase04_migration.yaml but remains unintegrated under METH-READY-004 through METH-READY-007.
+      - The master-aligned prospect-polygon target remains inactive under METH-READY-004 through METH-READY-007 until its exact handoff, calibration and reviews exist.
     status: legacy-comparator
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "05"

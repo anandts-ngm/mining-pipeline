@@ -439,10 +439,11 @@ def preflight_path_lengths(
     enabled: bool | None = None,
     execution_root: Path | None = None,
 ) -> list[str]:
-    """Warn (dry-run) or fail (real run) when generated paths exceed ``limit``.
+    """Fail before phase writes when generated paths exceed ``limit``.
 
     Skipped entirely when long-path support is enabled (or undeterminable -> we do
-    not block). ``enabled`` may be supplied for testing. Returns warning lines.
+    not block). A dry run still writes scaffolding, so it must fail at the same
+    preflight boundary as a real run. ``enabled`` may be supplied for testing.
     """
     if enabled is None:
         enabled = winpath.long_paths_enabled()
@@ -458,9 +459,8 @@ def preflight_path_lengths(
         f"{len(hits)} output path(s) would exceed {limit} chars (longest {length}: {longest}). "
         "Enable Windows long paths (LongPathsEnabled=1) or shorten paths.runs_root."
     )
-    if dry_run:
-        logger.warning(warning)
-        return [warning]
+    mode = "dry-run" if dry_run else "real-run"
+    warning = f"{warning} Refusing {mode} before creating phase artifacts."
     logger.error(warning)
     raise PathTooLongError(warning)
 

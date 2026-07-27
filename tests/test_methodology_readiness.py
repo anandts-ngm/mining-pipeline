@@ -20,9 +20,9 @@ def test_master_first_readiness_report_is_deterministic_and_truthful() -> None:
     second = build_methodology_readiness_report(manifest)
     assert first == second
     assert render_methodology_readiness_report(first) == render_methodology_readiness_report(second)
-    assert first.discrepancy_total == 69
+    assert first.discrepancy_total == 71
     assert first.unresolved_count == 0
-    assert first.historical_unresolved_record_count == 22
+    assert first.historical_unresolved_record_count == 23
     assert len(first.obligations) == 7
     assert all(obligation.affected_phases for obligation in first.obligations)
     assert all(obligation.required_evidence for obligation in first.obligations)
@@ -39,7 +39,7 @@ def test_master_first_readiness_report_is_deterministic_and_truthful() -> None:
         == "resolved methodology decisions plus operational prerequisites; not scientific "
         "approval or a gate decision"
     )
-    assert first.phase04_target_status == "specified-not-integrated"
+    assert first.phase04_target_status == "implemented-inactive"
     assert any(
         "provenance-bound human reference set" in item
         for item in first.phase04_activation_requirements
@@ -75,7 +75,7 @@ def test_methodology_status_cli_uses_configured_manifest_without_raw_access(proj
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
     assert payload["unresolved_count"] == 0
-    assert payload["historical_unresolved_record_count"] == 22
+    assert payload["historical_unresolved_record_count"] == 23
     assert payload["obligations"][0]["obligation_id"] == "METH-READY-001"
     assert payload["missing_registered_inputs"][0]["input_number"] == 23
     assert "raw_root" not in result.stdout

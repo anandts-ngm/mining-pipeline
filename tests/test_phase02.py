@@ -1,6 +1,6 @@
 """Phase 02 (Remote Sensing Preprocessing) tests against synthetic fixtures.
 
-Phase 02 clips to Phase 01's AOIs (5 km / 1 km buffers + licence boundary), so the
+Phase 02 clips to Phase 01's AOIs (5 km / 1 km buffers), so the
 real-run test runs Phase 00 (working copies) and Phase 01 (buffers + boundary) first.
 """
 
@@ -9,6 +9,10 @@ from __future__ import annotations
 import rasterio
 
 from buduunkhad.core import paths, raster_writers
+from buduunkhad.core.aster_readiness import (
+    AsterReadinessStatus,
+    load_aster_readiness_record,
+)
 from buduunkhad.core.gates import GateStatus
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
@@ -113,15 +117,29 @@ def test_phase02_aster_falls_back_to_method_note_without_gdal(raw_archive, monke
     assert row["decision"] == "Method-note"
     assert "No HDF4-capable GDAL" in str(row["note"])
     assert not phase._aster_processed
+    readiness_path = (
+        paths.phase_dir(config.output_root, "02")
+        / "02_ASTER_Workflow_v5"
+        / "06_QAQC"
+        / f"{config.register_prefix}_ASTER_HDF_Readiness_Record.json"
+    )
+    readiness = load_aster_readiness_record(readiness_path)
+    assert readiness.status is AsterReadinessStatus.UNAVAILABLE
+    assert readiness.source_input_no == 73
+    assert readiness.source.sha256
+    assert phase._aster_readiness_path == readiness_path
 
     report = phase.qaqc(ctx)
     aster_item = next(i for i in report.items if "ASTER alteration" in i.item)
     assert aster_item.decision.value == "N/A"
+    readiness_item = next(i for i in report.items if "ASTER exact-source" in i.item)
+    assert readiness_item.decision.value == "Pass"
+    assert "unavailable" in readiness_item.note
     assert phase.gate(report, ctx).status is GateStatus.GO
 
 
 def test_phase02_sentinel_clip_margins_flagged_nodata(raw_archive):
-    """#74/#77 Sentinel composites have no source nodata; the licence clip must flag margins
+    """#74/#77 Sentinel composites have no source nodata; the 1 km clip must flag margins
     with a nodata value (not leave them as valid 0.0). Regression for the v0.3.1 fix."""
     import numpy as np
     from rasterio.transform import from_origin
@@ -156,10 +174,30 @@ def test_phase02_sentinel_clip_margins_flagged_nodata(raw_archive):
 
     out_by_no = {r["no"]: r.get("output", "") for r in phase._rows}
     for no in (74, 77):
+        row = next(item for item in phase._rows if item["no"] == no)
+        assert row["clip_buffer"] == "1km"
         matches = [p for p in phase._outputs if p.name == out_by_no.get(no)]
         assert matches, f"no export produced for Sentinel #{no}"
         with rasterio.open(matches[0]) as ds:
             assert ds.nodata == -9999.0, f"Sentinel #{no} clip margin not flagged nodata"
+
+
+def test_phase02_qaqc_rows_use_configured_target_crs(project):
+    config, register, _tmp = project
+    configured = config.model_copy(deep=True)
+    configured.crs.target_epsg = 32648
+    ctx = _ctx(configured, register)
+    phase = Phase02RemoteSensing()
+
+    row = phase._base_row(
+        ctx,
+        register[0],
+        action="test",
+        clip_label="test",
+        compress="test",
+    )
+
+    assert row["output_crs"] == "EPSG:32648"
 
 
 def test_phase02_dry_run(project):

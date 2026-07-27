@@ -51,9 +51,11 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 ## 3. Current implemented state
 
 - Phases 00–02 have substantial deterministic implementations.
-- Phase 03 has a substantial deterministic scaffold and an opt-in AI review handoff, but remains
-  scientifically incomplete and dependent on qualified human georeferencing, digitizing,
-  interpretation, and deposit-model work.
+- Phase 03 has a substantial deterministic scaffold, source-specific legend/feature request
+  preparation, non-destructive overlap review, an opt-in AI review handoff, structured 03A
+  assessment/critique records, and an exact scientific-handoff resolver. It remains
+  scientifically incomplete until qualified humans supply the required georeferencing,
+  digitizing, interpretation, review, and deposit-model decisions.
 - Pending master-required Phase 03 human/scientific handoff items block advancement; no
   operational exception turns them into completed evidence.
 - Runtime execution purposes are resolved before run-side effects through the byte-bound
@@ -66,10 +68,12 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   handoff, the authoritative Phase 04 target, or flight/HSE work.
 - Phase 04 is a deterministic fixed-grid legacy comparator. It is not the hand-drawn prospect
   workflow described by the Phase 04 guide and is not a replacement for Phase 10 final ranking.
-- The master-aligned Phase 04 prospect-polygon target is specified separately in
-  `config/methodology/phase04_migration.yaml` and is not integrated into the comparator.
-- Twenty-two historical methodology ambiguities are closed by linked decisions in discrepancy
-  contract v1.4.0. Missing data and human acceptance were not fabricated: seven operational
+- The master-aligned Phase 04 prospect-polygon workflow is implemented separately from the
+  comparator. It deterministically measures reviewed polygons and applies only human score
+  judgments, but remains inactive until an exact Phase 03 handoff, approved reference-set
+  calibration, methodology-owner review, and project-geologist review resolve METH-READY-007.
+- Twenty-three historical methodology ambiguities are closed by linked decisions in discrepancy
+  contract v1.5.0. Missing data and human acceptance were not fabricated: seven operational
   prerequisites and exclusions remain explicit in `config/methodology/automation_readiness.yaml`.
 - Phase 05 is deliberately parked. Phases 05–11 and 99 are registered stubs; registration is not
   implementation.
@@ -87,14 +91,19 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   registration actor, and reason. Filenames, layer-name keywords, and directory proximity are
   discovery only.
 - Phase 01 emits a sealed, exact-source licence-boundary validation record with deterministic CRS,
-  coordinate, topology, area/perimeter, buffer and derivative-byte findings. It remains separate
-  from the data-custodian and qualified-reviewer attestations required to resolve METH-READY-005.
+  coordinate, topology, area/perimeter, buffer and derivative-byte findings. Separate
+  data-custodian and qualified-reviewer attestations plus an exact acceptance resolver are
+  implemented; METH-READY-005 remains open until those real reviews exist.
 - A real partial run may read a predecessor phase only from the same isolated run or an explicit
   `PHASE=RUN_ID` source binding whose run manifest, phase record, gate and complete file seal are
   revalidated before and after use. The promoted `output_root` tree is compatibility-only and is
   never an execution input.
-- Phase 04 rejects AI-lifecycle and handoff evidence until a separately approved authoritative
-  integration adapter exists.
+- The Phase 04 comparator continues to reject AI-lifecycle and handoff evidence. The separate
+  prospect-polygon workflow consumes exact accepted Phase 03 evidence only through a scientific
+  handoff and separately approved activation record.
+- The Phase 04 comparator is implemented but cannot currently execute in a valid real run because
+  every real Phase 04 source must include an advanceable Phase 03 gate, and the required Phase 03
+  scientific handoff evidence remains unresolved. Dry-run scaffolding is not operational readiness.
 - Run manifest v2.2 binds policy, per-phase execution mode, and every used scoped authorization.
   Publication manifest v1.2 preserves those identities and forces scaffold, support-evidence, and
   legacy-comparator packages to remain provisional; v2.0/v2.1 runs and v1.1 packages remain
@@ -203,6 +212,18 @@ geometry with complete repair provenance.
 ## 10. Engineering and compatibility
 
 - Preserve existing CLI and phase behavior unless the task explicitly changes it.
+- Before writing significant amounts of new code, look for existing utilities or mechanisms that
+  could solve the problem. Avoid expanding the task to unrelated issues, but do not confuse
+  keeping the task focused with minimizing the size of the implementation. Prefer addressing the
+  underlying architectural problem over adding a localized workaround, even when doing so
+  requires a substantial refactor or rearchitecture. Ask the user for guidance if in doubt about
+  whether to attempt a larger refactor or not.
+- All significant changes must be tested. Add or update focused tests for semantic changes when
+  existing coverage does not already establish the intended behavior.
+- Do not use comments to narrate code, but do use them to explain invariants and why something
+  unusual was done a particular way. Make sure that a comment will make sense to somebody reading
+  the code for the first time. Prefer plain language, avoid jargon, and do not be afraid to be
+  more verbose when necessary to explain something well.
 - Prefer additive, reversible, typed changes and strict Pydantic persisted contracts.
 - Fail loudly on invalid configuration, provenance, schemas, geometry, chronology, path safety,
   saved responses, review state, and artifact identity.

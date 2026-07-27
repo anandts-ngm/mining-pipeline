@@ -4,7 +4,7 @@ ORCHESTRATE. The heavy lifting — georeferencing scan maps, digitizing litholog
 structure / occurrence vectors, writing the deposit model, doing the scoring — is human
 work in QGIS / Excel / Word. This module scaffolds the 12-folder tree, emits every
 register / template / schema, ingests the machine-tractable inputs (the #68 mineralized-
-point XLSX and any human-digitized layers), builds the CMCS 5/10/20/25 km context buffer off
+point XLSX and exact manifest-authorized reviewed layers), builds the CMCS 5/10/20/25 km context buffer off
 the Phase 01 licence boundary, assembles the preliminary 17-layer support-evidence schema, and
 runs the QA/QC + 6-condition gate.
 
@@ -1120,7 +1120,10 @@ class Phase03GeologySynthesis(Phase):
             note=(
                 f"Ingested: {', '.join(sorted(set(self._ingested_layers)))}."
                 if self._ingested_layers
-                else "No human-digitized layers found yet; re-run after QGIS digitizing."
+                else (
+                    "No eligible reviewed layer was selected; complete QGIS review, register the "
+                    "exact artifact in the evidence catalog, and rerun with its manifest selected."
+                )
             ),
         )
         report.add(
@@ -1203,7 +1206,8 @@ _PHASE3_NOTE = (
     "# Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis (orchestrated)\n\n"
     "The pipeline scaffolds the 12-folder tree, emits every register/template/schema, builds\n"
     "the CMCS 5/10/20/25 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
-    "mineralized-point XLSX (4326->32647) and any human-digitized layers, and assembles the\n"
+    "mineralized-point XLSX (4326->32647) and exact manifest-authorized reviewed layers, and\n"
+    "assembles the\n"
     "preliminary 17-layer support-evidence schema/package in "
     "`Geological_Evidence_Layers_v01.gpkg`. Layer presence is not evidence completeness, "
     "scientific approval, or authoritative Phase 04 readiness.\n\n"

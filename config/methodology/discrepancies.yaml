@@ -1,4 +1,4 @@
-format_version: 1.4.0
+format_version: 1.5.0
 # Append-only methodology decision register. Complete history — unresolved, resolved,
 # superseded, and withdrawn records. Resolved history is never erased; a later issue
 # gets a new linked record instead of reopening one. Historical records migrated from
@@ -1093,3 +1093,45 @@ discrepancies:
     implementation_evidence: config/methodology/authority.yaml reference-only status; METH-READY-001 parks Phase 05.
     resolves_discrepancy_ids: [METH-DISC-042]
     related_discrepancy_ids: [METH-DISC-004, METH-DISC-042, METH-DISC-048]
+  - discrepancy_id: METH-DISC-070
+    subject: sentinel-clip-extent-master-conflict
+    compared_sources:
+      - methodology.master-v9
+      - METH-DISC-015
+      - config/methodology/phase02_processing.yaml
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: The exact master requires Phase 02 Sentinel subsets to use the licence boundary plus either a 500 m or 1 km buffer, while the historical METH-DISC-015 decision and current implementation use the bare licence boundary.
+    operational_impact: Bare-boundary clipping removes the master-required context and can truncate supporting remote-sensing evidence at the licence edge.
+    status: unresolved
+    proposed_resolution: Select one master-permitted Sentinel context, record it in the versioned Phase 02 processing contract, and bind the runtime and QA/QC output to that exact value.
+    required_approver: repository-owner or methodology-owner
+    remaining_actions:
+      - Select either the master-permitted 500 m or 1 km Sentinel context.
+      - Update the Phase 02 processing contract, implementation, generated method note, and regression tests.
+    related_discrepancy_ids: [METH-DISC-015, METH-DISC-035, METH-DISC-064]
+    evidence_references:
+      - methodology.master-v9 Phase 02 step-by-step methodology
+      - config/methodology/discrepancies.yaml METH-DISC-015
+      - src/buduunkhad/phases/phase02_remote_sensing.py Sentinel AOI routing
+    affected_phases: ["02"]
+    blocker_category: parameter-selection
+    missing_evidence:
+      - One explicitly selected master-permitted Sentinel buffer distance.
+  - discrepancy_id: METH-DISC-071
+    subject: master-conforming-sentinel-context-selection
+    compared_sources:
+      - METH-DISC-070
+      - methodology.master-v9
+      - config/methodology/phase02_processing.yaml
+      - src/buduunkhad/phases/phase02_remote_sensing.py
+    statement: Phase 02 requires one reproducible Sentinel clip extent selected from the exact master's permitted 500 m or 1 km alternatives.
+    operational_impact: The received Sentinel derivatives retain consistent edge context and every run reports the exact adopted clip extent.
+    status: resolved
+    resolution: Adopt the licence boundary plus 1 km buffer for registered Sentinel inputs 74, 77 and 78, record it as a support-evidence processing profile, and retire bare-boundary clipping from active behavior.
+    rationale: One kilometre is explicitly permitted by the exact master, preserves the larger available edge context, aligns with the existing detailed-basemap context, and does not establish a mineralization or decision threshold.
+    approver: repository-owner directive
+    resolved_on: "2026-07-27"
+    effective_version: methodology-contracts-v1.5.0
+    implementation_evidence: config/methodology/phase02_processing.yaml Sentinel profile; Phase 02 input routing and exact-value regression tests.
+    resolves_discrepancy_ids: [METH-DISC-070]
+    related_discrepancy_ids: [METH-DISC-015, METH-DISC-035, METH-DISC-064, METH-DISC-070]

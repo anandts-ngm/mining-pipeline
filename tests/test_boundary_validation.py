@@ -12,13 +12,18 @@ from pydantic import ValidationError
 from buduunkhad.ai.fingerprint import sha256_value
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.boundary_validation import (
+    BoundaryAcceptanceRecord,
     BoundaryReviewAttestation,
     BoundaryReviewDecision,
     BoundaryReviewerRole,
     BoundaryValidationError,
     BoundaryValidationRecord,
+    create_boundary_review,
+    load_boundary_acceptance,
     load_boundary_validation_record,
+    resolve_boundary_acceptance,
     verify_boundary_validation_files,
+    write_boundary_authority_record,
 )
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
@@ -198,3 +203,62 @@ def test_boundary_review_attestation_identity_rejects_tampering(raw_archive) -> 
     value["decision"] = "accepted"
     with pytest.raises(ValidationError, match="identity is invalid"):
         BoundaryReviewAttestation.model_validate(value)
+
+
+def test_boundary_acceptance_requires_both_exact_roles(raw_archive, tmp_path) -> None:
+    config, _register, _ctx, phase01_root, record_path = _run_boundary(raw_archive)
+    reviews = []
+    for role, reviewer in (
+        (BoundaryReviewerRole.DATA_CUSTODIAN, "Data Custodian"),
+        (BoundaryReviewerRole.QUALIFIED_REVIEWER, "Geospatial Reviewer"),
+    ):
+        review = create_boundary_review(
+            record_path,
+            reviewer=reviewer,
+            reviewer_role=role,
+            reviewer_authorization_id=f"authorization-{role.value}",
+            reviewed_at=datetime(2026, 7, 27, 4, 0, tzinfo=UTC),
+            decision=BoundaryReviewDecision.ACCEPTED,
+            rationale="Accepted exact deterministic boundary evidence.",
+        )
+        path = tmp_path / f"{role.value}.json"
+        write_boundary_authority_record(review, path)
+        reviews.append(path)
+
+    acceptance = resolve_boundary_acceptance(
+        record_path,
+        source_phase_root=paths.phase_dir(config.output_root, "00"),
+        phase_root=phase01_root,
+        attestation_paths=tuple(reviews),
+    )
+    output = tmp_path / "acceptance.json"
+    write_boundary_authority_record(acceptance, output)
+
+    assert isinstance(load_boundary_acceptance(output), BoundaryAcceptanceRecord)
+    assert acceptance.acceptance_id
+
+
+def test_boundary_acceptance_rejects_duplicate_role(raw_archive, tmp_path) -> None:
+    config, _register, _ctx, phase01_root, record_path = _run_boundary(raw_archive)
+    review = create_boundary_review(
+        record_path,
+        reviewer="Reviewer",
+        reviewer_role=BoundaryReviewerRole.QUALIFIED_REVIEWER,
+        reviewer_authorization_id="reviewer-authorization",
+        reviewed_at=datetime(2026, 7, 27, 4, 0, tzinfo=UTC),
+        decision=BoundaryReviewDecision.ACCEPTED,
+        rationale="Accepted exact deterministic boundary evidence.",
+    )
+    paths_out = []
+    for suffix in ("one", "two"):
+        path = tmp_path / f"{suffix}.json"
+        write_boundary_authority_record(review, path)
+        paths_out.append(path)
+
+    with pytest.raises(BoundaryValidationError, match="both exact reviewer roles"):
+        resolve_boundary_acceptance(
+            record_path,
+            source_phase_root=paths.phase_dir(config.output_root, "00"),
+            phase_root=phase01_root,
+            attestation_paths=tuple(paths_out),
+        )

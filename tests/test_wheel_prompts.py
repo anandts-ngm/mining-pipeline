@@ -34,8 +34,14 @@ def test_installed_wheel_loads_packaged_prompt_registry(tmp_path: Path) -> None:
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
     expected_resources = {
+        "buduunkhad/core/aster_readiness.py",
         "buduunkhad/core/boundary_validation.py",
         "buduunkhad/core/evidence_manifest.py",
+        "buduunkhad/core/georeference.py",
+        "buduunkhad/core/phase03_science.py",
+        "buduunkhad/core/phase04_authoritative.py",
+        "buduunkhad/geospatial_ai/phase03_source_workflow.py",
+        "buduunkhad/readiness_cli.py",
         "buduunkhad/prompt_data/registry.yaml",
         "buduunkhad/prompt_data/prompt-lock.yaml",
         "buduunkhad/prompt_data/fixtures/document_extraction/1.0.0/system.txt",
@@ -91,6 +97,7 @@ from pathlib import Path
 import buduunkhad
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
 from buduunkhad.core.boundary_validation import (
+    BOUNDARY_ACCEPTANCE_FORMAT_VERSION,
     BOUNDARY_REVIEW_FORMAT_VERSION,
     BOUNDARY_VALIDATION_FORMAT_VERSION,
 )
@@ -99,6 +106,9 @@ from buduunkhad.core.evidence_manifest import (
     EVIDENCE_MANIFEST_FORMAT_VERSION,
 )
 from buduunkhad.core.execution_policy import ExecutionMode, load_execution_policy
+from buduunkhad.core.georeference import GEOREFERENCE_ACCEPTANCE_FORMAT_VERSION
+from buduunkhad.core.phase03_science import PHASE03_HANDOFF_FORMAT_VERSION
+from buduunkhad.core.phase04_authoritative import PHASE04_RESULT_FORMAT_VERSION
 from buduunkhad.core.publication_manifest import PUBLICATION_MANIFEST_FORMAT_VERSION
 from buduunkhad.core.run_storage import (
     RUN_MANIFEST_FORMAT_VERSION,
@@ -136,6 +146,10 @@ assert phase05.phase_id == "05"
 assert buduunkhad.__version__ == "0.8.1"
 assert BOUNDARY_VALIDATION_FORMAT_VERSION == "1.0.0"
 assert BOUNDARY_REVIEW_FORMAT_VERSION == "1.0.0"
+assert BOUNDARY_ACCEPTANCE_FORMAT_VERSION == "1.0.0"
+assert GEOREFERENCE_ACCEPTANCE_FORMAT_VERSION == "1.0.0"
+assert PHASE03_HANDOFF_FORMAT_VERSION == "1.0.0"
+assert PHASE04_RESULT_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_MANIFEST_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_CATALOG_FORMAT_VERSION == "1.0.0"
 assert RUN_MANIFEST_FORMAT_VERSION == "2.2.0"
@@ -151,17 +165,17 @@ binding = SourcePhaseBinding(
 assert binding.phase_id == "00"
 assert "P03-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase03.requirements}}
 assert "P04-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase04.requirements}}
-assert len(discrepancies.discrepancies) == 69
+assert len(discrepancies.discrepancies) == 71
 assert any(
     item.discrepancy_id == "METH-DISC-033"
     for item in discrepancies.discrepancies
 )
-assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-069"
+assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-071"
 assert len(discrepancies.unresolved()) == 0
-assert len(discrepancies.historical_unresolved()) == 22
+assert len(discrepancies.historical_unresolved()) == 23
 assert len(readiness.obligations) == 7
 assert phase02_processing.scientific_use == "support-evidence-only"
-assert phase04_migration.status == "specified-not-integrated"
+assert phase04_migration.status == "implemented-inactive"
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

@@ -67,7 +67,7 @@ operational_exception_controls:
   - control_id: OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE
     phase_id: "01"
     qaqc_items:
-      - Phase 1 handoff package complete
+      - Phase 1 handoff scaffold emitted
     permitted_modes: [scaffold]
 publication_policy:
   approved_source_modes: [authoritative]

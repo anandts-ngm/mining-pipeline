@@ -5,7 +5,7 @@ authority_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b6
 scoring_source: phase04.guide
 class_band_source: methodology.master-v9
 decision_sources: [METH-DISC-060, METH-DISC-068]
-status: specified-not-integrated
+status: implemented-inactive
 legacy_comparator_status: retained-regression-only
 target_geometry: human-reviewed-prospect-polygons
 criteria:
@@ -68,7 +68,7 @@ ai_policy:
   - A named qualified human owns reviewed prospect geometry and scientific score judgments.
   - AI output cannot publish, approve or satisfy the Phase 04 handoff gate.
 activation_requirements:
-  - Implement this contract as a separate authoritative workflow; do not mutate the legacy comparator.
+  - Use the separate prospect-polygon implementation without mutating the legacy comparator.
   - Calibrate ranged scoring against a methodology-owner-approved, provenance-bound human reference set; the adopted sources specify no fixed reference-count requirement.
   - Add resolver-backed Phase 03 accepted-evidence integration.
   - Complete licence-boundary and georeferencing validation evidence.

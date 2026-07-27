@@ -284,7 +284,7 @@ class MethodologyDiscrepancy(BaseModel):
 class DiscrepancyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.4.0"]
+    format_version: Literal["1.5.0"]
     discrepancies: tuple[MethodologyDiscrepancy, ...]
 
     @model_validator(mode="after")
@@ -474,6 +474,22 @@ class BasemapAssetPolicy(BaseModel):
         return self
 
 
+class SentinelProcessingProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile_id: Literal["received-sentinel-derivatives-1km-support-v1"]
+    input_numbers: tuple[Literal[74, 77, 78], ...]
+    operation: Literal["reproject-and-clip"]
+    clip_buffer_m: Literal[1000]
+    rationale: str
+
+    @model_validator(mode="after")
+    def _covers_the_exact_registered_inputs(self) -> SentinelProcessingProfile:
+        if self.input_numbers != (74, 77, 78):
+            raise ValueError("Phase 02 Sentinel profile must cover inputs 74, 77 and 78 in order")
+        return self
+
+
 class DemProcessingProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -509,12 +525,13 @@ class DemProcessingProfile(BaseModel):
 class Phase02ProcessingContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.1.0"]
     phase_id: Literal["02"]
     authority_source: Literal["methodology.master-v9"]
-    decision_sources: tuple[Literal["METH-DISC-052", "METH-DISC-053"], ...]
+    decision_sources: tuple[Literal["METH-DISC-052", "METH-DISC-053", "METH-DISC-071"], ...]
     policy_status: Literal["adopted-support-evidence-contract"]
     scientific_use: Literal["support-evidence-only"]
+    sentinel_profile: SentinelProcessingProfile
     basemap_assets: tuple[BasemapAssetPolicy, ...]
     dem_profiles: tuple[DemProcessingProfile, ...]
     parameter_policy: tuple[str, ...] = Field(min_length=1)
@@ -525,7 +542,7 @@ class Phase02ProcessingContract(BaseModel):
             raise ValueError("Phase 02 basemap contract must cover inputs 75 and 76 in order")
         if tuple(item.input_number for item in self.dem_profiles) != (12, 9):
             raise ValueError("Phase 02 DEM contract must cover primary input 12 then input 9")
-        if self.decision_sources != ("METH-DISC-052", "METH-DISC-053"):
+        if self.decision_sources != ("METH-DISC-052", "METH-DISC-053", "METH-DISC-071"):
             raise ValueError("Phase 02 processing decisions must be exact and ordered")
         return self
 
@@ -564,7 +581,7 @@ class Phase04MigrationContract(BaseModel):
     scoring_source: Literal["phase04.guide"]
     class_band_source: Literal["methodology.master-v9"]
     decision_sources: tuple[Literal["METH-DISC-060", "METH-DISC-068"], ...]
-    status: Literal["specified-not-integrated"]
+    status: Literal["implemented-inactive"]
     legacy_comparator_status: Literal["retained-regression-only"]
     target_geometry: Literal["human-reviewed-prospect-polygons"]
     criteria: tuple[Phase04Criterion, ...] = Field(min_length=1)

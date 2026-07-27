@@ -43,7 +43,7 @@ obligations:
       - HDF4 open result, subdataset inventory, geolocation and CRS checks.
       - Reprojection and output-validation record tied to the same source identity.
     deterministic_next_steps:
-      - Implement a fail-closed local readiness validator and persist its machine-readable result.
+      - Run the fail-closed local readiness validator against the exact HDF source and retain its machine-readable result.
     required_human_authority:
       - geospatial data custodian
       - project geologist for interpretation acceptance
@@ -59,7 +59,7 @@ obligations:
       - Source/target CRS, GCPs, transformation, resampling, residuals/RMSE and visual-alignment checks.
       - Named qualified reviewer, review time and decision.
     deterministic_next_steps:
-      - Detect source content, prepare controlled derivatives, propose GCPs and calculate residual metrics without assigning acceptance.
+      - Use the implemented measurement and attestation workflow to bind source/derivative identity, GCPs and residual metrics, then obtain both required human acceptances.
     required_human_authority:
       - qualified geospatial reviewer
       - project geologist
@@ -92,7 +92,7 @@ obligations:
       - Completed and reviewed 03A deposit-model matrix.
       - Explicit Phase 03 scientific handoff record.
     deterministic_next_steps:
-      - Prepare review packages, validate geometry/provenance and calculate reproducible summaries.
+      - Prepare the implemented source-specific review packages, resolve overlap findings, complete the structured 03A assessment and critique, then obtain the project-geologist review and exact scientific handoff.
     required_human_authority:
       - project geologist
     source_refs: [methodology.master-v9, phase03.guide, METH-DISC-040, METH-DISC-062, METH-DISC-067]
@@ -101,13 +101,13 @@ obligations:
     affected_phases: ["04"]
     status: blocked-human-evidence
     blocks_phase_completion: true
-    decision: Retain the fixed-grid comparator and keep the master-aligned prospect-polygon workflow unintegrated until its activation contract is met.
+    decision: Retain the fixed-grid comparator and keep the separate master-aligned prospect-polygon implementation inactive until its activation contract is met.
     required_evidence:
       - Resolver-backed accepted Phase 03 evidence and completed 03A model.
       - A methodology-owner-approved, provenance-bound human reference set and calibration results; no fixed reference-count requirement is adopted.
       - Human-reviewed prospect geometry and scoring acceptance.
     deterministic_next_steps:
-      - Implement the separate target workflow only after upstream evidence contracts can be resolved exactly.
+      - Run the separate implementation only after an exact Phase 03 handoff, approved reference-set calibration and both required activation reviews resolve.
     required_human_authority:
       - methodology owner
       - project geologist

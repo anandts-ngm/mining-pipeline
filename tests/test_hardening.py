@@ -64,12 +64,10 @@ def test_preflight_blocks_real_run_when_disabled(project):
         preflight_path_lengths(config, register, dry_run=False, logger=LOG, limit=10, enabled=False)
 
 
-def test_preflight_warns_in_dry_run(project):
+def test_preflight_blocks_dry_run_before_scaffold_writes(project):
     config, register, _tmp = project
-    warns = preflight_path_lengths(
-        config, register, dry_run=True, logger=LOG, limit=10, enabled=False
-    )
-    assert warns and "exceed" in warns[0]
+    with pytest.raises(PathTooLongError, match="Refusing dry-run"):
+        preflight_path_lengths(config, register, dry_run=True, logger=LOG, limit=10, enabled=False)
 
 
 def test_preflight_skipped_when_enabled(project):

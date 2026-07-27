@@ -315,6 +315,12 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     assert "METH-DISC-060 and METH-DISC-068" in method_text
     assert "unresolved geometry" not in method_text
     assert "review signals, not an authoritative Go/No-Go decision" in method_text
+    assert "selected, immutable evidence manifests" in method_text
+    assert "directory proximity have no authority" in method_text
+    assert "dropped under the Phase 03/04 dirs" not in method_text
+    assert "exact-role adapter admits authoritative road evidence" in method_text
+    assert "qualified expert review" in phase.gate_condition
+    assert "selected for drone/recon" not in phase.gate_condition
     assert "v9 §5 8-criterion matrix" not in method_text
     assert "v9 §5 8-criterion matrix" not in qaqc_text
 
@@ -393,6 +399,7 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     assert result.status == "ok"
     assert phase._n_candidates >= 1
     assert phase._criteria_available["rs"] is True  # alteration fed -> rs available
+    assert phase._criteria_available["access"] is False
 
     pdir = _p04_dir(config)
     pp = next((pdir / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg"))

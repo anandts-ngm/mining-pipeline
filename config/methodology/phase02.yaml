@@ -10,8 +10,8 @@ requirements:
     source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.aster-sop, METH-DISC-020, METH-DISC-021, METH-DISC-034, METH-DISC-056, METH-DISC-063]
     status: adopted
   - requirement_id: P02-SENTINEL-INPUT-001
-    statement: The registered received Sentinel composites and ratio products follow the master's received-derivative branch; automation is limited to validated operations supported by those exact inputs and never claims raw-band preprocessing.
-    source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.sentinel-qgis402-guide, METH-DISC-035, METH-DISC-064]
+    statement: The registered received Sentinel composites and ratio products follow the master's received-derivative branch; automation is limited to validated operations supported by those exact inputs, clips them to the licence boundary plus the adopted 1 km context, and never claims raw-band preprocessing.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.sentinel-qgis402-guide, METH-DISC-035, METH-DISC-064, METH-DISC-071]
     status: adopted
   - requirement_id: P02-BASEMAP-REFERENCE-001
     statement: The basemap operator guide is a Phase 02 reference only; phase02_processing.yaml fixes input 75 as full-extent visual context and input 76 as 1 km clipped visual context.

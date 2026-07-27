@@ -617,6 +617,14 @@ def test_phase03_pending_human_evidence_blocks_master_handoff(raw_archive):
         item for item in report.items if "preliminary support-evidence schema/package" in item.item
     )
     assert "not evidence completeness or scientific approval" in schema_item.note
+    reviewed_item = next(
+        item
+        for item in report.items
+        if "Human-digitized geology/structure/occurrence layers ingested" in item.item
+    )
+    assert "evidence catalog" in reviewed_item.note
+    assert "manifest selected" in reviewed_item.note
+    assert "re-run after QGIS digitizing" not in reviewed_item.note
     assert not report.has_failures
 
     decision = phase.gate(report, ctx)
