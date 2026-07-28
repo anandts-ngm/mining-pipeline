@@ -11,6 +11,7 @@ from buduunkhad.config import (
     AIProviderSelection,
     ExecutionProfile,
     ProjectConfig,
+    ReasoningEffort,
     load_config,
 )
 
@@ -20,6 +21,7 @@ def test_unchanged_project_yaml_loads_with_offline_legacy_defaults() -> None:
     assert config.ai.profile is ExecutionProfile.LEGACY
     assert config.ai.enabled is False
     assert config.ai.provider is AIProviderSelection.DISABLED
+    assert config.ai.reasoning_effort is None
     assert config.ai.external_data_allowed is False
     assert config.ai.max_cost_per_run_usd == Decimal("0")
     assert config.ai.max_requests_per_run == 1
@@ -63,6 +65,7 @@ def test_hybrid_configuration_is_optional_and_typed() -> None:
             "enabled": True,
             "provider": AIProviderSelection.OPENAI,
             "provider_model": "synthetic-model",
+            "reasoning_effort": ReasoningEffort.HIGH,
             "external_data_allowed": True,
             "source_egress_policy": "require-explicit-approval",
             "max_cost_per_run_usd": Decimal("1"),
@@ -71,6 +74,20 @@ def test_hybrid_configuration_is_optional_and_typed() -> None:
     assert hybrid.profile is ExecutionProfile.HYBRID
     assert hybrid.external_data_allowed is True
     assert hybrid.provider is AIProviderSelection.OPENAI
+    assert hybrid.reasoning_effort is ReasoningEffort.HIGH
+
+
+def test_enabled_openai_requires_explicit_reasoning_effort() -> None:
+    with pytest.raises(ValidationError, match="explicit reasoning_effort"):
+        AIConfig(
+            profile=ExecutionProfile.HYBRID,
+            enabled=True,
+            provider=AIProviderSelection.OPENAI,
+            provider_model="synthetic-model",
+            external_data_allowed=True,
+            source_egress_policy="require-explicit-approval",
+            max_cost_per_run_usd=Decimal("1"),
+        )
 
 
 def test_ai_config_copy_and_reload_paths_revalidate_security_fields() -> None:

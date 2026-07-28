@@ -8,6 +8,7 @@ import sys
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import fiona
 import numpy as np
@@ -34,12 +35,13 @@ from buduunkhad.config import (
     AIConfig,
     AIProviderSelection,
     ExecutionProfile,
+    ReasoningEffort,
     SourceEgressPolicy,
 )
 from buduunkhad.core.qgis_project import read_qgz_layers
 from buduunkhad.geospatial_ai.draft_gpkg import DraftOutputError, process_validated_response
 from buduunkhad.geospatial_ai.evaluation import EvaluationSettings, evaluate_geopackages
-from buduunkhad.geospatial_ai.execution import execute_request_package
+from buduunkhad.geospatial_ai.execution import LiveExecutionError, execute_request_package
 from buduunkhad.geospatial_ai.geometry_validation import (
     GeometryValidationError,
     validate_geometry,
@@ -62,6 +64,7 @@ from buduunkhad.geospatial_ai.pixel_world import PixelWorldError, tile_pixel_to_
 from buduunkhad.geospatial_ai.qgis_output import write_ai_draft_qgz
 from buduunkhad.geospatial_ai.qgis_process import QgisProcessError, SubprocessQgisProcessAdapter
 from buduunkhad.geospatial_ai.requests import (
+    PreparedReasoningEffort,
     RequestPackageError,
     approve_request_package_egress,
     load_request_package,
@@ -176,6 +179,7 @@ def _prepare(
         target_crs=TARGET_CRS,
         provider="openai",
         model="synthetic-model",
+        reasoning_effort="high",
         tile_parameters=TileParameters(width=8, height=8, overlap=2),
         estimated_cost_usd=Decimal("0.25"),
         now=datetime(2026, 7, 15, tzinfo=UTC),
@@ -241,6 +245,39 @@ def _saved_response(
     return destination
 
 
+def test_openai_preparation_requires_explicit_reasoning_effort(
+    ai_roots: StorageRoots,
+) -> None:
+    source = _write_raster(ai_roots.require_snapshot_root() / "reasoning-map.tif")
+    with pytest.raises(RequestPackageError, match="explicit reasoning effort"):
+        prepare_request_package(
+            source,
+            roots=ai_roots,
+            run_id="missing-reasoning-effort",
+            task_type=TaskType.GEOLOGICAL_FEATURE_PROPOSAL,
+            target_crs=TARGET_CRS,
+            provider="openai",
+            model="gpt-5.6-sol",
+        )
+
+
+def test_openai_preparation_rejects_unsupported_reasoning_effort(
+    ai_roots: StorageRoots,
+) -> None:
+    source = _write_raster(ai_roots.require_snapshot_root() / "invalid-reasoning-map.tif")
+    with pytest.raises(RequestPackageError, match="unsupported OpenAI reasoning effort"):
+        prepare_request_package(
+            source,
+            roots=ai_roots,
+            run_id="invalid-reasoning-effort",
+            task_type=TaskType.GEOLOGICAL_FEATURE_PROPOSAL,
+            target_crs=TARGET_CRS,
+            provider="openai",
+            model="gpt-5.6-sol",
+            reasoning_effort=cast(PreparedReasoningEffort, "extreme"),
+        )
+
+
 def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path) -> None:
     source = _write_raster(ai_roots.require_snapshot_root() / "synthetic-map.tif")
     source_before = source.read_bytes()
@@ -265,6 +302,7 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
         target_crs=TARGET_CRS,
         provider="openai",
         model="synthetic-model",
+        reasoning_effort="high",
         tile_parameters=TileParameters(width=8, height=8, overlap=2),
         now=datetime(2026, 7, 15, tzinfo=UTC),
     )
@@ -293,6 +331,7 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
         target_crs=TARGET_CRS,
         provider="openai",
         model="synthetic-model",
+        reasoning_effort="high",
         tile_parameters=TileParameters(width=8, height=8, overlap=2),
         now=datetime(2026, 7, 15, tzinfo=UTC),
     )
@@ -991,6 +1030,7 @@ def test_live_key_absence_blocks_only_execute(
         enabled=True,
         provider=AIProviderSelection.OPENAI,
         provider_model="synthetic-model",
+        reasoning_effort=ReasoningEffort.HIGH,
         external_data_allowed=True,
         max_cost_per_run_usd=Decimal("1"),
         source_egress_policy=SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL,
@@ -1042,6 +1082,7 @@ def test_injected_live_boundary_receives_exact_source_context_and_stays_keyless(
         enabled=True,
         provider=AIProviderSelection.OPENAI,
         provider_model="synthetic-model",
+        reasoning_effort=ReasoningEffort.HIGH,
         external_data_allowed=True,
         max_cost_per_run_usd=Decimal("1"),
         source_egress_policy=SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL,
@@ -1055,6 +1096,7 @@ def test_injected_live_boundary_receives_exact_source_context_and_stays_keyless(
         now=datetime(2026, 7, 15, 0, 0, 30, tzinfo=UTC),
     )
     assert provider.call is not None
+    assert provider.call.reasoning_effort == "high"
     assert package.source.asset_id in provider.call.user_prompt
     assert package.source.sha256 in provider.call.user_prompt
     assert package.tile_manifest.tiles[0].tile_id in provider.call.user_prompt
@@ -1068,6 +1110,32 @@ def test_injected_live_boundary_receives_exact_source_context_and_stays_keyless(
     )
     assert validated.imported_without_current_execution is True
     assert "openai" not in sys.modules
+
+
+def test_live_execution_rejects_reasoning_effort_changed_after_package_approval(
+    ai_roots: StorageRoots,
+) -> None:
+    package_directory, _package = _prepare(ai_roots, run_id="reasoning-mismatch-run")
+    approve_request_package_egress(
+        package_directory,
+        roots=ai_roots,
+        approved_by="egress-reviewer",
+        approved_at=datetime(2026, 7, 15, tzinfo=UTC),
+        note="Synthetic fixture approved after inspecting high reasoning effort.",
+    )
+    config = AIConfig(
+        profile=ExecutionProfile.HYBRID,
+        enabled=True,
+        provider=AIProviderSelection.OPENAI,
+        provider_model="synthetic-model",
+        reasoning_effort=ReasoningEffort.LOW,
+        external_data_allowed=True,
+        max_cost_per_run_usd=Decimal("1"),
+        source_egress_policy=SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL,
+    )
+
+    with pytest.raises(LiveExecutionError, match="reasoning effort differs"):
+        execute_request_package(package_directory, config=config, roots=ai_roots)
 
 
 def test_job_ledger_is_append_only_and_enforces_transitions(ai_roots: StorageRoots) -> None:

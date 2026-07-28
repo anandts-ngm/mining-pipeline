@@ -102,6 +102,7 @@ def prepare(
     task: str = typer.Option("geological-feature-proposal", "--task"),
     provider: str = typer.Option("disabled", "--provider"),
     model: str | None = typer.Option(None, "--model"),
+    reasoning_effort: str | None = typer.Option(None, "--reasoning-effort"),
     tile_size: int = typer.Option(1024, "--tile-size", min=1),
     overlap: int = typer.Option(128, "--overlap", min=0),
     page_number: int = typer.Option(1, "--page-number", min=1),
@@ -112,7 +113,11 @@ def prepare(
     """Render a source and create an inspectable request package without executing AI."""
 
     from buduunkhad.ai.contracts import TaskType
-    from buduunkhad.geospatial_ai.requests import PreparedProvider, prepare_request_package
+    from buduunkhad.geospatial_ai.requests import (
+        PreparedProvider,
+        PreparedReasoningEffort,
+        prepare_request_package,
+    )
     from buduunkhad.geospatial_ai.tiles import TileParameters
 
     try:
@@ -125,6 +130,7 @@ def prepare(
             target_crs=project.crs.target_authority,
             provider=cast(PreparedProvider, provider),
             model=model,
+            reasoning_effort=cast(PreparedReasoningEffort | None, reasoning_effort),
             tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
             estimated_cost_usd=Decimal(str(estimated_cost)),
             page_number=page_number,
@@ -338,6 +344,7 @@ def phase03_prepare_source(
     run_id: str = typer.Option(..., "--run-id"),
     provider: str = typer.Option("disabled", "--provider"),
     model: str | None = typer.Option(None, "--model"),
+    reasoning_effort: str | None = typer.Option(None, "--reasoning-effort"),
     tile_size: int = typer.Option(1024, "--tile-size", min=1),
     overlap: int = typer.Option(128, "--overlap", min=0),
     page_number: int = typer.Option(1, "--page-number", min=1),
@@ -350,7 +357,10 @@ def phase03_prepare_source(
     from buduunkhad.geospatial_ai.phase03_source_workflow import (
         prepare_phase03_source_workflow,
     )
-    from buduunkhad.geospatial_ai.requests import PreparedProvider
+    from buduunkhad.geospatial_ai.requests import (
+        PreparedProvider,
+        PreparedReasoningEffort,
+    )
     from buduunkhad.geospatial_ai.tiles import TileParameters
 
     try:
@@ -362,6 +372,7 @@ def phase03_prepare_source(
             target_crs=project.crs.target_authority,
             provider=cast(PreparedProvider, provider),
             model=model,
+            reasoning_effort=cast(PreparedReasoningEffort | None, reasoning_effort),
             tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
             estimated_cost_usd=Decimal(str(estimated_cost)),
             page_number=page_number,

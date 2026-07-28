@@ -143,6 +143,7 @@ def _build_case(
         target_crs=target_crs,
         provider="openai",
         model="synthetic-model",
+        reasoning_effort="high",
         tile_parameters=TileParameters(width=8, height=8, overlap=2),
         now=datetime(2026, 7, 16, 0, 0, tzinfo=UTC),
     )

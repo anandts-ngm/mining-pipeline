@@ -71,6 +71,7 @@ class ProviderCall(FrozenModel):
     task_type: TaskType
     provider: Literal["openai", "anthropic"]
     model: str
+    reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] | None = None
     system_prompt: str
     user_prompt: str
     output_schema: CanonicalJSONValue

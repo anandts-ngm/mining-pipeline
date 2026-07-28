@@ -60,6 +60,9 @@ class OpenAIProvider:
             )
         execution_failed = False
         try:
+            reasoning = (
+                {"effort": call.reasoning_effort} if call.reasoning_effort is not None else None
+            )
             response = client.responses.create(
                 model=call.model,
                 instructions=call.system_prompt,
@@ -74,6 +77,7 @@ class OpenAIProvider:
                 },
                 max_output_tokens=call.max_output_tokens,
                 timeout=call.timeout_seconds,
+                **({"reasoning": reasoning} if reasoning is not None else {}),
             )
         except Exception:  # SDK boundary: deliberately discard potentially sensitive details.
             execution_failed = True

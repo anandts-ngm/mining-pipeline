@@ -22,6 +22,7 @@ from buduunkhad.ai.fingerprint import sha256_file, sha256_value
 from buduunkhad.geospatial_ai.path_safety import StorageRoots
 from buduunkhad.geospatial_ai.requests import (
     PreparedProvider,
+    PreparedReasoningEffort,
     load_request_package,
     prepare_request_package,
 )
@@ -192,6 +193,7 @@ def prepare_phase03_source_workflow(
     target_crs: str,
     provider: PreparedProvider = "disabled",
     model: str | None = None,
+    reasoning_effort: PreparedReasoningEffort | None = None,
     tile_parameters: TileParameters | None = None,
     estimated_cost_usd: Decimal = Decimal("0"),
     page_number: int = 1,
@@ -211,6 +213,7 @@ def prepare_phase03_source_workflow(
             target_crs=target_crs,
             provider=provider,
             model=model,
+            reasoning_effort=reasoning_effort,
             tile_parameters=tile_parameters,
             estimated_cost_usd=estimated_cost_usd,
             page_number=page_number,

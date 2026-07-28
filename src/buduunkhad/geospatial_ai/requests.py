@@ -51,6 +51,8 @@ from buduunkhad.geospatial_ai.tiles import (
 )
 
 PreparedProvider = Literal["disabled", "openai", "anthropic"]
+PreparedReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 
 _PROMPTS: dict[TaskType, str] = {
     TaskType.LEGEND_EXTRACTION: "vertical.legend-extraction",
@@ -73,6 +75,7 @@ def prepare_request_package(
     target_crs: str,
     provider: PreparedProvider = "disabled",
     model: str | None = None,
+    reasoning_effort: PreparedReasoningEffort | None = None,
     tile_parameters: TileParameters | None = None,
     egress: EgressDecision | None = None,
     phase_id: str = "03",
@@ -88,8 +91,14 @@ def prepare_request_package(
         raise RequestPackageError(f"unsupported provider selection: {provider}")
     if provider == "disabled" and model is not None:
         raise RequestPackageError("disabled provider cannot define a model")
+    if provider != "openai" and reasoning_effort is not None:
+        raise RequestPackageError("reasoning effort is supported only for OpenAI preparation")
+    if reasoning_effort is not None and reasoning_effort not in _REASONING_EFFORTS:
+        raise RequestPackageError(f"unsupported OpenAI reasoning effort: {reasoning_effort}")
     if provider != "disabled" and (not model or not model.strip()):
         raise RequestPackageError("live-provider preparation requires a model name")
+    if provider == "openai" and reasoning_effort is None:
+        raise RequestPackageError("OpenAI preparation requires an explicit reasoning effort")
     if task_type is TaskType.FEATURE_CRITIQUE and subject is None:
         raise RequestPackageError("independent critique preparation requires a subject identity")
     if egress is not None and egress.status is EgressDecisionStatus.APPROVED:
@@ -161,6 +170,16 @@ def prepare_request_package(
                     name="response_format",
                     value=CanonicalJSONValue.from_value("json_schema"),
                 ),
+            )
+            + (
+                (
+                    NamedJSONValue(
+                        name="reasoning_effort",
+                        value=CanonicalJSONValue.from_value(reasoning_effort),
+                    ),
+                )
+                if reasoning_effort is not None
+                else ()
             ),
         ),
         interpretation_parameters=(

@@ -138,6 +138,17 @@ class AIProviderSelection(StrEnum):
     ANTHROPIC = "anthropic"
 
 
+class ReasoningEffort(StrEnum):
+    """Explicit OpenAI Responses API reasoning effort."""
+
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
 class SourceEgressPolicy(StrEnum):
     """Policy applied before any source preview can leave the local machine."""
 
@@ -211,6 +222,7 @@ class AIConfig(_ValidatedAIConfigModel):
     enabled: bool = False
     provider: AIProviderSelection = AIProviderSelection.DISABLED
     provider_model: str | None = None
+    reasoning_effort: ReasoningEffort | None = None
     external_data_allowed: bool = False
     request_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     max_output_tokens: int = Field(default=4096, ge=1)
@@ -240,12 +252,16 @@ class AIConfig(_ValidatedAIConfigModel):
                 raise ValueError("enabled AI requires OpenAI or Anthropic")
             if not self.provider_model or not self.provider_model.strip():
                 raise ValueError("enabled AI requires a provider_model")
+            if self.provider is AIProviderSelection.OPENAI and self.reasoning_effort is None:
+                raise ValueError("enabled OpenAI execution requires an explicit reasoning_effort")
             if not self.external_data_allowed:
                 raise ValueError("enabled live AI requires external_data_allowed=true")
             if self.source_egress_policy is not SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL:
                 raise ValueError("enabled live AI requires explicit source-egress approval")
         elif self.external_data_allowed:
             raise ValueError("external data cannot be allowed while AI is disabled")
+        if self.reasoning_effort is not None and self.provider is not AIProviderSelection.OPENAI:
+            raise ValueError("reasoning_effort is supported only by the OpenAI provider")
         if self.provider is AIProviderSelection.DISABLED and self.provider_model is not None:
             raise ValueError("disabled provider cannot define provider_model")
         if not all(

@@ -22,6 +22,7 @@ from buduunkhad.config import (
     AIConfig,
     AIProviderSelection,
     ExecutionProfile,
+    ReasoningEffort,
     SourceEgressPolicy,
 )
 from buduunkhad.geospatial_ai.ledger import AIJobLedger, LedgerStatus
@@ -55,8 +56,12 @@ def execute_request_package(
 ) -> Path:
     package_directory = roots.assert_run_artifact(package_directory)
     package = load_request_package(package_directory)
+    prepared_reasoning_effort = _prepared_reasoning_effort(package)
     _validate_execution_policy(
-        package.request.provider.provider, package.request.provider.model, config
+        package.request.provider.provider,
+        package.request.provider.model,
+        prepared_reasoning_effort,
+        config,
     )
     if package.egress.status is not EgressDecisionStatus.APPROVED:
         raise LiveExecutionError("request package has no explicit source-egress approval")
@@ -81,6 +86,9 @@ def execute_request_package(
         task_type=package.request.task_type,
         provider=cast(Literal["openai", "anthropic"], config.provider.value),
         model=config.provider_model or "",
+        reasoning_effort=(
+            config.reasoning_effort.value if config.reasoning_effort is not None else None
+        ),
         system_prompt=components["system"],
         user_prompt=_execution_user_prompt(package, components["user"]),
         output_schema=package.output_schema_json,
@@ -155,7 +163,12 @@ def execute_request_package(
     return output
 
 
-def _validate_execution_policy(provider: str, model: str, config: AIConfig) -> None:
+def _validate_execution_policy(
+    provider: str,
+    model: str,
+    prepared_reasoning_effort: ReasoningEffort | None,
+    config: AIConfig,
+) -> None:
     if not config.enabled:
         raise LiveExecutionError("AI execution is disabled")
     if config.profile is ExecutionProfile.LEGACY:
@@ -164,10 +177,30 @@ def _validate_execution_policy(provider: str, model: str, config: AIConfig) -> N
         raise LiveExecutionError("no live provider is selected")
     if provider != config.provider.value or model != config.provider_model:
         raise LiveExecutionError("prepared provider/model differs from current configuration")
+    if prepared_reasoning_effort != config.reasoning_effort:
+        raise LiveExecutionError("prepared reasoning effort differs from current configuration")
     if not config.external_data_allowed:
         raise LiveExecutionError("external data egress is disabled")
     if config.source_egress_policy is not SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL:
         raise LiveExecutionError("source-egress policy does not require explicit approval")
+
+
+def _prepared_reasoning_effort(
+    package: RequestPackageManifest,
+) -> ReasoningEffort | None:
+    values = {
+        parameter.name: parameter.value.to_python()
+        for parameter in package.request.provider.parameters
+    }
+    raw = values.get("reasoning_effort")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise LiveExecutionError("prepared reasoning effort is malformed")
+    try:
+        return ReasoningEffort(raw)
+    except ValueError as exc:
+        raise LiveExecutionError("prepared reasoning effort is unsupported") from exc
 
 
 def _provider(selection: AIProviderSelection) -> AIProvider:

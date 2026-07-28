@@ -129,6 +129,7 @@ def _call(provider: str) -> ProviderCall:
         task_type=TaskType.LEGEND_EXTRACTION,
         provider=cast(Literal["openai", "anthropic"], provider),
         model="synthetic-model",
+        reasoning_effort="high" if provider == "openai" else None,
         system_prompt="Return structured test data.",
         user_prompt="Read the synthetic image.",
         output_schema=CanonicalJSONValue.from_value(SampleOutput.model_json_schema()),
@@ -213,6 +214,7 @@ def test_openai_injected_client_executes_without_sdk_or_key(
     assert result.usage == AIUsage(input_tokens=7, output_tokens=3, requests=1)
     assert responses.arguments is not None
     assert responses.arguments["model"] == "synthetic-model"
+    assert responses.arguments["reasoning"] == {"effort": "high"}
     request_input = responses.arguments["input"]
     assert isinstance(request_input, list)
     content = request_input[0]["content"]  # ty: ignore[not-subscriptable]
