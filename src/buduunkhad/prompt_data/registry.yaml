@@ -48,6 +48,22 @@ prompts:
       sha256: a936d0a50e67ee4381d237946cca1d9d3edba503fac20a835bc769142db8848b
     prompt_sha256: 026770d43dea56fb0dc55c39bec31d4a06a81023feec6f01642d5fd95ba2696d
     status: enabled
+  - prompt_id: vertical.legend-extraction
+    version: 1.1.0
+    task_type: legend_extraction
+    components:
+      - name: system
+        path: vertical/legend_extraction/1.1.0/system.txt
+        sha256: 2dfed7e21ffb2c559f4e76ebc5b355882db06a58473755aa7cfde4c41533a316
+      - name: user
+        path: vertical/legend_extraction/1.1.0/user.txt
+        sha256: 25e29f892303f901693b07a31a300f1197fc97864dd37b6d7c113a50b3f5b0aa
+    output_schema:
+      schema_id: buduunkhad.ai.legend_extraction
+      version: 1.0.0
+      sha256: a936d0a50e67ee4381d237946cca1d9d3edba503fac20a835bc769142db8848b
+    prompt_sha256: b7a86f31a6c0ec0fdb8885d41f962d8500cae5adf1c22fb2932747b02e9bec7b
+    status: enabled
   - prompt_id: vertical.map-feature-interpretation
     version: 1.0.0
     task_type: map_feature_interpretation
@@ -79,6 +95,38 @@ prompts:
       version: 1.0.0
       sha256: 9b869540ad998ff8073e9674c52b4fb8d499cb835c4e477c65854b561682db5e
     prompt_sha256: 6c2794ac4036dfd1235b5b424fd76dcbb13791c26d17d1b91dd05876600349ec
+    status: enabled
+  - prompt_id: vertical.geological-feature-proposal
+    version: 1.1.0
+    task_type: geological_feature_proposal
+    components:
+      - name: system
+        path: vertical/geological_feature_proposal/1.1.0/system.txt
+        sha256: 9afa325d720214810646d3b93cbc01bec6c06462907fd90d2e0615eae18f495b
+      - name: user
+        path: vertical/geological_feature_proposal/1.1.0/user.txt
+        sha256: 489e1a4ba085a5ce3dec3cf4e7b118c7a5f5a4e5f4373d8273ecea6bcca425c4
+    output_schema:
+      schema_id: buduunkhad.ai.geological_feature_proposal_batch
+      version: 1.0.0
+      sha256: 9b869540ad998ff8073e9674c52b4fb8d499cb835c4e477c65854b561682db5e
+    prompt_sha256: f91c80bfeb342727ac943ef0cfc983698ced488ce82f7286d89ca1b7420112c1
+    status: enabled
+  - prompt_id: vertical.geological-feature-proposal
+    version: 1.2.0
+    task_type: geological_feature_proposal
+    components:
+      - name: system
+        path: vertical/geological_feature_proposal/1.2.0/system.txt
+        sha256: d8d45d3ef6e2d385fc550b5a4badae35835b41d853960402548bf3301528d828
+      - name: user
+        path: vertical/geological_feature_proposal/1.2.0/user.txt
+        sha256: d0464ab2fb4425c4b5da0301759c04e4c58d2dba956736f22012cab8922be1f5
+    output_schema:
+      schema_id: buduunkhad.ai.geological_feature_proposal_batch
+      version: 1.0.0
+      sha256: 9b869540ad998ff8073e9674c52b4fb8d499cb835c4e477c65854b561682db5e
+    prompt_sha256: b6331fd6fac1a4c24a06f612753ad0895712db8f7f71c567cb1256bc152ff1bc
     status: enabled
   - prompt_id: vertical.feature-critique
     version: 1.0.0

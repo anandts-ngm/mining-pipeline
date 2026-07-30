@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import cast
 
@@ -49,10 +50,8 @@ def extract_lineaments(hillshade_paths: list[Path], *, params: LineamentParams =
     in the hillshades' CRS.
     """
     try:
-        from skimage.feature import canny  # ty: ignore[unresolved-import]
-        from skimage.transform import (  # ty: ignore[unresolved-import]
-            probabilistic_hough_line,
-        )
+        canny = import_module("skimage.feature").canny
+        probabilistic_hough_line = import_module("skimage.transform").probabilistic_hough_line
     except ImportError as exc:  # pragma: no cover - optional dependency
         raise LineamentError("scikit-image not installed (pip install scikit-image)") from exc
 

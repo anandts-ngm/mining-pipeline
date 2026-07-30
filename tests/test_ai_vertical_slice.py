@@ -16,12 +16,13 @@ import pytest
 import rasterio
 from pyproj import CRS, Transformer
 from rasterio.transform import from_origin
-from shapely.geometry import LineString, Polygon, box, shape
+from shapely.geometry import LineString, Point, Polygon, box, shape
 
 from buduunkhad.ai.contracts import (
     AIUsage,
     ArtifactSubjectIdentity,
     CanonicalJSONValue,
+    PixelLineString,
     RasterTileLocator,
     TaskType,
 )
@@ -60,7 +61,12 @@ from buduunkhad.geospatial_ai.manifests import (
     SavedProviderResponse,
 )
 from buduunkhad.geospatial_ai.path_safety import PathSafetyError, StorageRoots
-from buduunkhad.geospatial_ai.pixel_world import PixelWorldError, tile_pixel_to_world
+from buduunkhad.geospatial_ai.pixel_world import (
+    PixelWorldError,
+    tile_pixel_to_world,
+    transform_pixel_geometry,
+    transformed_source_extent,
+)
 from buduunkhad.geospatial_ai.qgis_output import write_ai_draft_qgz
 from buduunkhad.geospatial_ai.qgis_process import QgisProcessError, SubprocessQgisProcessAdapter
 from buduunkhad.geospatial_ai.requests import (
@@ -294,6 +300,12 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
     )
     assert legend_package.is_dir()
     assert legend_manifest.request.task_type is TaskType.LEGEND_EXTRACTION
+    assert legend_manifest.prompt.version == "1.1.0"
+    prompt_text = {
+        component.name: component.text for component in legend_manifest.prompt_components
+    }
+    assert "exact raster-tile locator objects" in prompt_text["user"]
+    assert "Do not create page or source-feature locators" in prompt_text["system"]
     package_directory, package = prepare_request_package(
         source,
         roots=ai_roots,
@@ -306,6 +318,15 @@ def test_complete_keyless_vertical_slice(ai_roots: StorageRoots, tmp_path: Path)
         tile_parameters=TileParameters(width=8, height=8, overlap=2),
         now=datetime(2026, 7, 15, tzinfo=UTC),
     )
+    assert package.prompt.version == "1.2.0"
+    feature_prompt_text = {
+        component.name: component.text for component in package.prompt_components
+    }
+    assert (
+        "faults_structures and intrusive_contacts use LineString" in feature_prompt_text["system"]
+    )
+    assert "Do not emit point annotations" in feature_prompt_text["user"]
+    assert "Set attributes to an empty array" in feature_prompt_text["user"]
     assert source.read_bytes() == source_before
     assert package.schema_identity.fingerprint_algorithm == SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM
     ledger_view = AIJobLedger(
@@ -548,6 +569,25 @@ def test_pixel_coordinates_are_reprojected_to_the_declared_target(
     actual = tile_pixel_to_world(1, 1, tile=tile, source=package.source)
     expected = Transformer.from_crs(4326, 32647, always_xy=True).transform(96.51, 45.59)
     assert actual == pytest.approx(expected)
+
+    edge_point = Point(tile_pixel_to_world(0, 1.3, tile=tile, source=package.source))
+    corner_only_extent = Polygon(
+        [
+            tile_pixel_to_world(0, 0, tile=tile, source=package.source),
+            tile_pixel_to_world(4, 0, tile=tile, source=package.source),
+            tile_pixel_to_world(4, 4, tile=tile, source=package.source),
+            tile_pixel_to_world(0, 4, tile=tile, source=package.source),
+        ]
+    )
+    assert not corner_only_extent.covers(edge_point)
+    assert transformed_source_extent(package.source).covers(edge_point)
+    transformed_edge = transform_pixel_geometry(
+        PixelLineString(type="LineString", coordinates=((0.0, 0.0), (4.0, 0.0))),
+        tile=tile,
+        source=package.source,
+    )
+    assert len(transformed_edge.coords) > 2
+    assert transformed_source_extent(package.source).covers(transformed_edge)
 
 
 def test_nan_nodata_and_naive_egress_time_have_explicit_persisted_contracts(

@@ -12,6 +12,7 @@ Support evidence only — never ore proof (invariant #8).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 
 
@@ -38,8 +39,7 @@ def find_whitebox():
     import/init failure means "not available" rather than an error.
     """
     try:
-        import whitebox  # ty: ignore[unresolved-import]
-
+        whitebox = import_module("whitebox")
         wbt = whitebox.WhiteboxTools()
         wbt.set_verbose_mode(False)
         return wbt

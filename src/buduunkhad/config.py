@@ -510,7 +510,24 @@ def _validate_register_groups(records: list[InputRecord], groups: list[EvidenceG
             )
 
 
-def load_config(config_path: Path | str = "config/project.yaml") -> ProjectConfig:
+def load_ai_config(config_path: Path | str) -> AIConfig:
+    """Load a standalone AI execution profile without accepting project settings or secrets."""
+
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"AI config not found: {config_path}")
+    with config_path.open(encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict) or set(data) != {"ai"}:
+        raise ValueError("standalone AI config must contain exactly one top-level 'ai' mapping")
+    return AIConfig.model_validate(data["ai"])
+
+
+def load_config(
+    config_path: Path | str = "config/project.yaml",
+    *,
+    ai_config_path: Path | str | None = None,
+) -> ProjectConfig:
     """Load ``project.yaml`` into a validated :class:`ProjectConfig`.
 
     ``base_dir`` is the parent of the ``config/`` directory (i.e. the repo root),
@@ -525,6 +542,8 @@ def load_config(config_path: Path | str = "config/project.yaml") -> ProjectConfi
     base_dir = config_path.resolve().parent.parent
     data["base_dir"] = base_dir
     config = ProjectConfig.model_validate(data)
+    if ai_config_path is not None:
+        config = config.model_copy(update={"ai": load_ai_config(ai_config_path)})
     # When the register is present, cross-check its group names/counts against project.yaml so a
     # divergence between the two editable config files fails loudly at load time.
     if config.register_path.exists():

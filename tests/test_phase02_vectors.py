@@ -6,6 +6,8 @@ the degradation paths are environment-independent and always run.
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import numpy as np
 import pytest
 import rasterio
@@ -40,8 +42,7 @@ def _write_raster(path, arr, *, res=12.5, epsg=32647, nodata=None):
 
 def _skimage_missing() -> bool:
     try:
-        import skimage  # noqa: F401  # ty: ignore[unresolved-import]
-
+        import_module("skimage")
         return False
     except ImportError:
         return True

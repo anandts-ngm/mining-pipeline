@@ -1,0 +1,1 @@
+Inspect the approved legend tiles. Return source-linked legend entries using only evidence visible in those tiles. For each entry, cite only the exact raster-tile locator objects for the tiles where it is visible. Do not invent or alter tile IDs, offsets, dimensions, source IDs, hashes, or locator kinds. Preserve uncertainty and record illegible or missing content as limitations.

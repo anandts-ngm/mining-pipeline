@@ -17,6 +17,7 @@ from buduunkhad.ai.providers import (
     ProviderCredentialError,
     ProviderDependencyError,
     ProviderImage,
+    ProviderResponseError,
 )
 from buduunkhad.config import (
     AIConfig,
@@ -157,7 +158,15 @@ def execute_request_package(
                 occurred_at=datetime.now(UTC),
                 error_category=type(exc).__name__,
             )
-        if isinstance(exc, (LiveExecutionError, ProviderCredentialError, ProviderDependencyError)):
+        if isinstance(
+            exc,
+            (
+                LiveExecutionError,
+                ProviderCredentialError,
+                ProviderDependencyError,
+                ProviderResponseError,
+            ),
+        ):
             raise
         raise LiveExecutionError("live provider execution failed") from exc
     return output

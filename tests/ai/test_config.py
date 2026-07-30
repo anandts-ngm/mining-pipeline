@@ -12,6 +12,7 @@ from buduunkhad.config import (
     ExecutionProfile,
     ProjectConfig,
     ReasoningEffort,
+    load_ai_config,
     load_config,
 )
 
@@ -27,6 +28,50 @@ def test_unchanged_project_yaml_loads_with_offline_legacy_defaults() -> None:
     assert config.ai.max_requests_per_run == 1
     assert config.ai.max_output_tokens == 4096
     assert config.ai.concurrency == 1
+
+
+def test_standalone_openai_profile_is_explicit_and_does_not_change_default() -> None:
+    ai = load_ai_config(Path("config/ai.openai.yaml"))
+    config = load_config(
+        Path("config/project.yaml"),
+        ai_config_path=Path("config/ai.openai.yaml"),
+    )
+
+    assert ai.profile is ExecutionProfile.AI_FIRST
+    assert ai.enabled is True
+    assert ai.provider is AIProviderSelection.OPENAI
+    assert ai.provider_model == "gpt-5.6-sol"
+    assert ai.reasoning_effort is ReasoningEffort.HIGH
+    assert ai.external_data_allowed is True
+    assert ai.request_timeout_seconds == 900
+    assert ai.max_output_tokens == 65536
+    assert ai.max_requests_per_run == 4
+    assert ai.max_cost_per_run_usd == Decimal("20.00")
+    assert config.ai == ai
+    assert load_config(Path("config/project.yaml")).ai.profile is ExecutionProfile.LEGACY
+
+
+def test_standalone_ai_profile_rejects_project_fields_and_credentials(tmp_path: Path) -> None:
+    invalid = tmp_path / "ai.yaml"
+    invalid.write_text(
+        "ai:\n"
+        "  profile: ai-first\n"
+        "  enabled: true\n"
+        "  provider: openai\n"
+        "  provider_model: synthetic-model\n"
+        "  reasoning_effort: high\n"
+        "  external_data_allowed: true\n"
+        "  source_egress_policy: require-explicit-approval\n"
+        "project:\n"
+        "  name: forbidden\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="exactly one top-level"):
+        load_ai_config(invalid)
+
+    invalid.write_text("ai:\n  embedded_credential: placeholder\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        load_ai_config(invalid)
 
 
 def test_legacy_serialization_shape_excludes_ai_by_default() -> None:

@@ -26,6 +26,7 @@ from buduunkhad.geospatial_ai.requests import (
     load_request_package,
     prepare_request_package,
 )
+from buduunkhad.geospatial_ai.source_assets import register_raster_source
 from buduunkhad.geospatial_ai.stitching import (
     OverlapReviewCandidate,
     OverlapReviewPair,
@@ -201,6 +202,16 @@ def prepare_phase03_source_workflow(
 ) -> tuple[Path, Phase03SourceWorkflowManifest]:
     """Prepare the two existing inspectable request packages needed for one source map."""
 
+    if source.suffix.casefold() == ".pdf":
+        raise Phase03SourceWorkflowError(
+            "Phase 03 feature workflows require a georeferenced raster; "
+            "use the generic legend-extraction command for document pages"
+        )
+    registered = register_raster_source(source, roots=roots, target_crs=target_crs)
+    if registered.source_crs is None:
+        raise Phase03SourceWorkflowError(
+            "Phase 03 feature workflows require a source CRS and affine georeference"
+        )
     run_directory = roots.run_directory(run_id, create=True)
     bindings: list[SourceTaskBinding] = []
     packages = []

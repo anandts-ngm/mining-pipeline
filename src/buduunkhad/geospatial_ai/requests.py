@@ -54,11 +54,14 @@ PreparedProvider = Literal["disabled", "openai", "anthropic"]
 PreparedReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
 
-_PROMPTS: dict[TaskType, str] = {
-    TaskType.LEGEND_EXTRACTION: "vertical.legend-extraction",
-    TaskType.MAP_FEATURE_INTERPRETATION: "vertical.map-feature-interpretation",
-    TaskType.GEOLOGICAL_FEATURE_PROPOSAL: "vertical.geological-feature-proposal",
-    TaskType.FEATURE_CRITIQUE: "vertical.feature-critique",
+_PROMPTS: dict[TaskType, tuple[str, str]] = {
+    TaskType.LEGEND_EXTRACTION: ("vertical.legend-extraction", "1.1.0"),
+    TaskType.MAP_FEATURE_INTERPRETATION: ("vertical.map-feature-interpretation", "1.0.0"),
+    TaskType.GEOLOGICAL_FEATURE_PROPOSAL: (
+        "vertical.geological-feature-proposal",
+        "1.2.0",
+    ),
+    TaskType.FEATURE_CRITIQUE: ("vertical.feature-critique", "1.0.0"),
 }
 
 
@@ -132,7 +135,11 @@ def prepare_request_package(
         run_id=run_id,
     )
     schemas = default_schema_registry()
-    prompt = PromptRegistry.load_packaged(schema_registry=schemas).get(_PROMPTS[task_type], "1.0.0")
+    prompt_id, prompt_version = _PROMPTS[task_type]
+    prompt = PromptRegistry.load_packaged(schema_registry=schemas).get(
+        prompt_id,
+        prompt_version,
+    )
     schema = schemas.resolve(prompt.output_schema)
     source_reference = SourceReference(
         asset_id=source.asset_id,

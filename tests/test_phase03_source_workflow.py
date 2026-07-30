@@ -63,6 +63,21 @@ def _write_raster(path: Path) -> Path:
     return path
 
 
+def _write_crsless_raster(path: Path) -> Path:
+    data = np.arange(3 * 12 * 12, dtype=np.uint8).reshape(3, 12, 12)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=12,
+        height=12,
+        count=3,
+        dtype="uint8",
+    ) as dataset:
+        dataset.write(data)
+    return path
+
+
 def _write_layer(
     path: Path,
     *,
@@ -111,6 +126,26 @@ def test_source_workflow_prepares_exact_legend_and_feature_packages(
     (package / "request-package.json").write_text("{}\n", encoding="utf-8")
     with pytest.raises(Phase03SourceWorkflowError, match="package bytes changed"):
         load_phase03_source_workflow(path, roots=roots)
+
+
+def test_source_workflow_rejects_ungeoreferenced_source_before_creating_run(
+    roots: StorageRoots,
+) -> None:
+    source = _write_crsless_raster(roots.require_snapshot_root() / "unreferenced-map.tif")
+
+    with pytest.raises(Phase03SourceWorkflowError, match="source CRS and affine"):
+        prepare_phase03_source_workflow(
+            source,
+            roots=roots,
+            run_id="unreferenced-source",
+            target_crs=TARGET_CRS,
+            provider="openai",
+            model="gpt-5.6-sol",
+            reasoning_effort="high",
+            estimated_cost_usd=Decimal("1"),
+        )
+
+    assert not roots.run_directory("unreferenced-source").exists()
 
 
 def test_overlap_classification_is_cross_tile_and_never_changes_geometry() -> None:

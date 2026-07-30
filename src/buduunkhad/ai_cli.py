@@ -26,11 +26,11 @@ phase03_ai_app = typer.Typer(
 ai_app.add_typer(phase03_ai_app, name="phase03")
 
 
-def _context(config_path: Path):
+def _context(config_path: Path, ai_config_path: Path | None = None):
     from buduunkhad.config import load_config
     from buduunkhad.geospatial_ai.path_safety import StorageRoots
 
-    config = load_config(config_path)
+    config = load_config(config_path, ai_config_path=ai_config_path)
     return config, StorageRoots.from_environment(raw_root=config.raw_root)
 
 
@@ -100,7 +100,7 @@ def prepare(
     source: Path = typer.Option(..., "--source", exists=True, dir_okay=False),
     run_id: str = typer.Option(..., "--run-id"),
     task: str = typer.Option("geological-feature-proposal", "--task"),
-    provider: str = typer.Option("disabled", "--provider"),
+    provider: str | None = typer.Option(None, "--provider"),
     model: str | None = typer.Option(None, "--model"),
     reasoning_effort: str | None = typer.Option(None, "--reasoning-effort"),
     tile_size: int = typer.Option(1024, "--tile-size", min=1),
@@ -109,6 +109,13 @@ def prepare(
     render_scale: float = typer.Option(1.0, "--render-scale", min=0.01),
     estimated_cost: float = typer.Option(0.0, "--estimated-cost", min=0),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+    ai_config: Path | None = typer.Option(
+        None,
+        "--ai-config",
+        exists=True,
+        dir_okay=False,
+        help="Optional standalone AI profile; never contains credentials.",
+    ),
 ) -> None:
     """Render a source and create an inspectable request package without executing AI."""
 
@@ -121,16 +128,24 @@ def prepare(
     from buduunkhad.geospatial_ai.tiles import TileParameters
 
     try:
-        project, roots = _context(config)
+        project, roots = _context(config, ai_config)
         directory, package = prepare_request_package(
             source,
             roots=roots,
             run_id=run_id,
             task_type=TaskType(task.replace("-", "_")),
             target_crs=project.crs.target_authority,
-            provider=cast(PreparedProvider, provider),
-            model=model,
-            reasoning_effort=cast(PreparedReasoningEffort | None, reasoning_effort),
+            provider=cast(PreparedProvider, provider or project.ai.provider.value),
+            model=model or project.ai.provider_model,
+            reasoning_effort=cast(
+                PreparedReasoningEffort | None,
+                reasoning_effort
+                or (
+                    project.ai.reasoning_effort.value
+                    if project.ai.reasoning_effort is not None
+                    else None
+                ),
+            ),
             tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
             estimated_cost_usd=Decimal(str(estimated_cost)),
             page_number=page_number,
@@ -171,13 +186,20 @@ def approve_egress(
 def execute(
     package: Path = typer.Option(..., "--package", exists=True, file_okay=False),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+    ai_config: Path | None = typer.Option(
+        None,
+        "--ai-config",
+        exists=True,
+        dir_okay=False,
+        help="Optional standalone AI profile; never contains credentials.",
+    ),
 ) -> None:
     """Execute one approved prepared package through the configured optional provider."""
 
     from buduunkhad.geospatial_ai.execution import execute_request_package
 
     try:
-        project, roots = _context(config)
+        project, roots = _context(config, ai_config)
         output = execute_request_package(package, config=project.ai, roots=roots)
     except (OSError, ValueError, RuntimeError) as exc:
         _abort(exc)
@@ -342,7 +364,7 @@ def phase03_import_ai_draft(
 def phase03_prepare_source(
     source: Path = typer.Option(..., "--source", exists=True, dir_okay=False),
     run_id: str = typer.Option(..., "--run-id"),
-    provider: str = typer.Option("disabled", "--provider"),
+    provider: str | None = typer.Option(None, "--provider"),
     model: str | None = typer.Option(None, "--model"),
     reasoning_effort: str | None = typer.Option(None, "--reasoning-effort"),
     tile_size: int = typer.Option(1024, "--tile-size", min=1),
@@ -351,6 +373,13 @@ def phase03_prepare_source(
     render_scale: float = typer.Option(1.0, "--render-scale", min=0.01),
     estimated_cost: float = typer.Option(0.0, "--estimated-cost", min=0),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+    ai_config: Path | None = typer.Option(
+        None,
+        "--ai-config",
+        exists=True,
+        dir_okay=False,
+        help="Optional standalone AI profile; never contains credentials.",
+    ),
 ) -> None:
     """Prepare locked legend and feature-proposal packages for one Phase 03 source."""
 
@@ -364,15 +393,23 @@ def phase03_prepare_source(
     from buduunkhad.geospatial_ai.tiles import TileParameters
 
     try:
-        project, roots = _context(config)
+        project, roots = _context(config, ai_config)
         output, manifest = prepare_phase03_source_workflow(
             source,
             roots=roots,
             run_id=run_id,
             target_crs=project.crs.target_authority,
-            provider=cast(PreparedProvider, provider),
-            model=model,
-            reasoning_effort=cast(PreparedReasoningEffort | None, reasoning_effort),
+            provider=cast(PreparedProvider, provider or project.ai.provider.value),
+            model=model or project.ai.provider_model,
+            reasoning_effort=cast(
+                PreparedReasoningEffort | None,
+                reasoning_effort
+                or (
+                    project.ai.reasoning_effort.value
+                    if project.ai.reasoning_effort is not None
+                    else None
+                ),
+            ),
             tile_parameters=TileParameters(width=tile_size, height=tile_size, overlap=overlap),
             estimated_cost_usd=Decimal(str(estimated_cost)),
             page_number=page_number,

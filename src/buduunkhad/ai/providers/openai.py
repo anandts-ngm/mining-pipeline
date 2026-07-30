@@ -71,7 +71,7 @@ class OpenAIProvider:
                     "format": {
                         "type": "json_schema",
                         "name": "buduunkhad_geospatial_output",
-                        "schema": call.output_schema.to_python(),
+                        "schema": _strict_output_schema(call.output_schema.to_python()),
                         "strict": True,
                     }
                 },
@@ -83,12 +83,10 @@ class OpenAIProvider:
             execution_failed = True
         if execution_failed:
             raise AIProviderError("OpenAI execution failed")
-        output_text = getattr(response, "output_text", None)
         response_id = getattr(response, "id", None)
-        if not isinstance(output_text, str) or not output_text.strip():
-            raise ProviderResponseError("OpenAI response did not contain structured output text")
         if not isinstance(response_id, str) or not response_id.strip():
             raise ProviderResponseError("OpenAI response did not contain a response ID")
+        output_text = _output_text(response)
         usage = _usage(response)
         return ProviderExecutionResult.from_payload(
             provider="openai",
@@ -130,6 +128,68 @@ def _usage(response: object) -> AIUsage:
     if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
         raise ProviderResponseError("OpenAI response usage is malformed")
     return AIUsage(input_tokens=input_tokens, output_tokens=output_tokens, requests=1)
+
+
+def _output_text(response: object) -> str:
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+    if getattr(response, "status", None) == "incomplete":
+        detail = getattr(response, "incomplete_details", None)
+        reason = getattr(detail, "reason", None)
+        allowed = {"content_filter", "max_output_tokens"}
+        if reason in allowed:
+            raise ProviderResponseError(f"OpenAI response was incomplete ({reason})")
+        raise ProviderResponseError("OpenAI response was incomplete")
+    raise ProviderResponseError("OpenAI response did not contain structured output text")
+
+
+def _strict_output_schema(value: object) -> dict[str, object]:
+    schema = _normalise_schema_node(value)
+    if not isinstance(schema, dict):
+        raise AIProviderError("OpenAI output schema root must be an object")
+    if schema.get("type") != "object":
+        raise AIProviderError("OpenAI output schema root must have object type")
+    return cast(dict[str, object], schema)
+
+
+def _normalise_schema_node(value: object) -> object:
+    if isinstance(value, list):
+        return [_normalise_schema_node(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    result: dict[str, object] = {}
+    discriminator = value.get("discriminator")
+    for raw_key, item in value.items():
+        if not isinstance(raw_key, str):
+            raise AIProviderError("OpenAI output schema keys must be strings")
+        key = raw_key
+        if key in {"default", "discriminator", "prefixItems"}:
+            continue
+        if key == "oneOf" and discriminator is not None:
+            result["anyOf"] = _normalise_schema_node(item)
+            continue
+        result[key] = _normalise_schema_node(item)
+
+    prefix_items = value.get("prefixItems")
+    if prefix_items is not None:
+        normalised_items = _normalise_schema_node(prefix_items)
+        if (
+            not isinstance(normalised_items, list)
+            or not normalised_items
+            or any(item != normalised_items[0] for item in normalised_items[1:])
+        ):
+            raise AIProviderError(
+                "OpenAI strict schema cannot represent a heterogeneous fixed-length tuple"
+            )
+        result["items"] = normalised_items[0]
+
+    properties = result.get("properties")
+    if isinstance(properties, dict):
+        result["required"] = list(properties)
+        result["additionalProperties"] = False
+    return result
 
 
 class _ResponsesEndpoint(Protocol):

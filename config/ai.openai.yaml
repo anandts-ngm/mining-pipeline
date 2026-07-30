@@ -1,0 +1,17 @@
+ai:
+  profile: ai-first
+  enabled: true
+  provider: openai
+  provider_model: gpt-5.6-sol
+  reasoning_effort: high
+  external_data_allowed: true
+  request_timeout_seconds: 900
+  max_output_tokens: 65536
+  max_requests_per_run: 4
+  max_cost_per_run_usd: "20.00"
+  concurrency: 1
+  source_egress_policy: require-explicit-approval
+  review_policy:
+    require_named_reviewer: true
+    high_risk_requires_geologist: true
+    production_geometry_requires_approval: true

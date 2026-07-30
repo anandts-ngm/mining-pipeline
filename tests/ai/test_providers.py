@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from datetime import UTC
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal, cast
 
 import pytest
@@ -14,6 +15,8 @@ from pydantic import Field, PrivateAttr, RootModel, computed_field, model_serial
 from buduunkhad.ai.contracts import (
     AIUsage,
     CanonicalJSONValue,
+    DocumentExtraction,
+    FeatureCritique,
     FrozenModel,
     NamedJSONValue,
     ReviewStatus,
@@ -31,6 +34,13 @@ from buduunkhad.ai.providers import (
     decode_provider_json,
     prohibit_provider_approval,
     validate_provider_output_contract,
+)
+from buduunkhad.ai.providers.openai import _strict_output_schema
+from buduunkhad.geospatial_ai.schemas import (
+    FeatureCritiqueBatch,
+    GeologicalFeatureProposalBatch,
+    LegendExtraction,
+    MapFeatureInterpretation,
 )
 from tests.support.providers import (
     AnthropicMessagesDouble,
@@ -221,6 +231,43 @@ def test_openai_injected_client_executes_without_sdk_or_key(
     assert any("tile-1" in item.get("text", "") for item in content)
 
 
+@pytest.mark.parametrize(
+    "output_model",
+    [
+        DocumentExtraction,
+        FeatureCritique,
+        LegendExtraction,
+        MapFeatureInterpretation,
+        GeologicalFeatureProposalBatch,
+        FeatureCritiqueBatch,
+    ],
+)
+def test_openai_wire_schema_is_strict_without_changing_domain_schema(
+    output_model: type[FrozenModel],
+) -> None:
+    domain_schema = output_model.model_json_schema()
+    wire_schema = _strict_output_schema(domain_schema)
+
+    assert output_model.model_json_schema() == domain_schema
+    _assert_openai_strict_schema(wire_schema)
+
+
+def test_openai_wire_schema_rejects_heterogeneous_fixed_tuples() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "pair": {
+                "type": "array",
+                "prefixItems": [{"type": "number"}, {"type": "string"}],
+                "minItems": 2,
+                "maxItems": 2,
+            }
+        },
+    }
+    with pytest.raises(AIProviderError, match="heterogeneous fixed-length tuple"):
+        _strict_output_schema(schema)
+
+
 def test_anthropic_injected_client_executes_without_sdk_or_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -323,6 +370,23 @@ def test_provider_response_time_is_timezone_aware() -> None:
     assert result.created_at.tzinfo is UTC
 
 
+def test_openai_incomplete_response_reports_safe_reason() -> None:
+    class IncompleteResponses:
+        def create(self, **kwargs: object) -> object:
+            del kwargs
+            return SimpleNamespace(
+                id="response-incomplete",
+                status="incomplete",
+                incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+                output_text="",
+            )
+
+    with pytest.raises(ProviderResponseError, match=r"incomplete \(max_output_tokens\)"):
+        OpenAIProvider(client=provider_client("responses", IncompleteResponses())).execute(
+            _call("openai")
+        )
+
+
 def test_injected_provider_failure_does_not_expose_request_or_environment_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -334,3 +398,23 @@ def test_injected_provider_failure_does_not_expose_request_or_environment_key(
             _call("openai")
         )
     assert key not in str(caught.value)
+
+
+def _assert_openai_strict_schema(value: object) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _assert_openai_strict_schema(item)
+        return
+    if not isinstance(value, dict):
+        return
+
+    assert "default" not in value
+    assert "discriminator" not in value
+    assert "oneOf" not in value
+    assert "prefixItems" not in value
+    properties = value.get("properties")
+    if isinstance(properties, dict):
+        assert value.get("required") == list(properties)
+        assert value.get("additionalProperties") is False
+    for item in value.values():
+        _assert_openai_strict_schema(item)
