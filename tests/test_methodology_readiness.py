@@ -20,7 +20,7 @@ def test_master_first_readiness_report_is_deterministic_and_truthful() -> None:
     second = build_methodology_readiness_report(manifest)
     assert first == second
     assert render_methodology_readiness_report(first) == render_methodology_readiness_report(second)
-    assert first.discrepancy_total == 71
+    assert first.discrepancy_total == 72
     assert first.unresolved_count == 0
     assert first.historical_unresolved_record_count == 23
     assert len(first.obligations) == 7

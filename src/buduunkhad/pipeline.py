@@ -32,6 +32,7 @@ from buduunkhad.core.execution_policy import (
     ExecutionMode,
     ExecutionPolicyBinding,
     ExecutionPolicyError,
+    PendingSourceGateRule,
     legacy_execution_mode,
     load_execution_authorizations,
     load_execution_policy,
@@ -585,22 +586,61 @@ def _execution_identity(
     return identity
 
 
-def _required_external_phases(selected_ids: list[str], *, dry_run: bool) -> frozenset[str]:
+def _pending_source_mode(
+    rules: tuple[PendingSourceGateRule, ...],
+    *,
+    source_phase_id: str,
+    consumer_phase_id: str,
+    execution_modes: Mapping[str, ExecutionMode],
+) -> ExecutionMode | None:
+    source_mode = execution_modes.get(source_phase_id)
+    consumer_mode = execution_modes.get(consumer_phase_id)
+    matching = tuple(
+        rule
+        for rule in rules
+        if rule.source_phase_id == source_phase_id
+        and (source_mode is None or rule.source_mode is source_mode)
+        and rule.consumer_phase_id == consumer_phase_id
+        and rule.consumer_mode is consumer_mode
+    )
+    if len(matching) > 1:
+        raise ExecutionPolicyError("execution policy ambiguously permits a pending source gate")
+    return matching[0].source_mode if matching else None
+
+
+def _required_external_phases(
+    selected_ids: list[str],
+    *,
+    dry_run: bool,
+    execution_modes: Mapping[str, ExecutionMode],
+    pending_gate_rules: tuple[PendingSourceGateRule, ...],
+) -> dict[str, ExecutionMode | None]:
     if dry_run:
-        return frozenset()
+        return {}
     available: set[str] = set()
-    required: set[str] = set()
+    required: dict[str, ExecutionMode | None] = {}
     for phase_id in selected_ids:
         for dependency in PHASE_INPUT_DEPENDENCIES.get(phase_id, frozenset()):
             if dependency not in available:
-                required.add(dependency)
+                pending_mode = _pending_source_mode(
+                    pending_gate_rules,
+                    source_phase_id=dependency,
+                    consumer_phase_id=phase_id,
+                    execution_modes=execution_modes,
+                )
+                if dependency not in required:
+                    required[dependency] = pending_mode
+                elif required[dependency] != pending_mode:
+                    # A strict consumer always wins when the same external source feeds more than
+                    # one selected phase. A provisional bridge must never weaken another phase.
+                    required[dependency] = None
         available.add(phase_id)
-    return frozenset(required)
+    return required
 
 
 def _resolve_source_phases(
     runs_root: Path,
-    required: frozenset[str],
+    required: Mapping[str, ExecutionMode | None],
     selectors: Mapping[str, str],
 ) -> tuple[ResolvedSourcePhase, ...]:
     if set(selectors) != set(required):
@@ -612,16 +652,55 @@ def _resolve_source_phases(
         )
     resolved: list[ResolvedSourcePhase] = []
     for phase_id, source_run_id in sorted(selectors.items()):
-        resolved.append(
-            resolve_source_phase(
-                runs_root,
-                phase_id,
-                source_run_id,
-                require_advance=True,
-                require_qaqc_passed=True,
-            )
+        pending_mode = required[phase_id]
+        source = resolve_source_phase(
+            runs_root,
+            phase_id,
+            source_run_id,
+            require_advance=pending_mode is None,
+            require_qaqc_passed=True,
         )
+        if pending_mode is not None:
+            if source.execution_mode is not pending_mode:
+                raise RunStorageError(
+                    f"source Phase {phase_id} is not a {pending_mode.value} execution"
+                )
+            if source.gate_status != GateStatus.GO.value and not (
+                source.gate_status == GateStatus.BLOCKED.value and source.qaqc_pending
+            ):
+                raise RunStorageError(
+                    f"source Phase {phase_id} is not a passing run with pending human items"
+                )
+        resolved.append(source)
     return tuple(resolved)
+
+
+def _can_feed_pending_gate_consumer(
+    *,
+    source_phase_id: str,
+    consumer_phase_id: str | None,
+    decision: GateDecision,
+    qaqc_passed: bool,
+    qaqc_pending: bool,
+    execution_modes: Mapping[str, ExecutionMode],
+    rules: tuple[PendingSourceGateRule, ...],
+) -> bool:
+    if (
+        consumer_phase_id is None
+        or decision.status is not GateStatus.BLOCKED
+        or not qaqc_passed
+        or not qaqc_pending
+    ):
+        return False
+    return (
+        _pending_source_mode(
+            rules,
+            source_phase_id=source_phase_id,
+            consumer_phase_id=consumer_phase_id,
+            execution_modes=execution_modes,
+        )
+        is execution_modes[source_phase_id]
+    )
 
 
 def _phase_outcome_from_dict(
@@ -904,12 +983,18 @@ def run_pipeline(
         dry_run=dry_run,
         requested_modes=requested_modes,
     )
+    policy_registry = load_execution_policy()
     execution_modes = {item.phase_id: item.execution_mode for item in execution_policy.phase_modes}
     authorizations = load_execution_authorizations(authorization_paths)
     validate_authorizations_for_run(authorizations, execution_policy)
     used_authorization_ids: set[str] = set()
     validate_execution_roots(config.raw_root, config.output_root, config.runs_root)
-    required_sources = _required_external_phases(selected_ids, dry_run=dry_run)
+    required_sources = _required_external_phases(
+        selected_ids,
+        dry_run=dry_run,
+        execution_modes=execution_modes,
+        pending_gate_rules=policy_registry.pending_source_gate_rules,
+    )
     source_selectors = dict(input_phase_runs or {})
     if run_id in source_selectors.values():
         raise RunStorageError("a run cannot use itself as a predecessor source")
@@ -1177,9 +1262,9 @@ def run_pipeline(
                     for item in resolved_source_phases
                 },
             )
-            operational_exception_controls = load_execution_policy().operational_exception_controls
+            operational_exception_controls = policy_registry.operational_exception_controls
 
-            for phase in selected:
+            for phase_index, phase in enumerate(selected):
                 if phase.id in completed_ids:
                     continue
                 refreshed_sources = _resolve_source_phases(
@@ -1357,13 +1442,34 @@ def run_pipeline(
                     logger.warning("Phase %s QA/QC failed; unsealed staging retained.", phase.id)
                     break
                 if not dry_run and decision is not None and not _can_advance(decision):
-                    manifest.stopped_at = phase.id
-                    logger.warning(
-                        "Phase %s gate blocked advance; stopping (%s).",
-                        phase.id,
-                        decision.reason,
+                    next_phase_id = (
+                        selected[phase_index + 1].id if phase_index + 1 < len(selected) else None
                     )
-                    break
+                    if _can_feed_pending_gate_consumer(
+                        source_phase_id=phase.id,
+                        consumer_phase_id=next_phase_id,
+                        decision=decision,
+                        qaqc_passed=outcome.qaqc_passed,
+                        qaqc_pending=outcome.qaqc_pending,
+                        execution_modes=execution_modes,
+                        rules=policy_registry.pending_source_gate_rules,
+                    ):
+                        assert next_phase_id is not None
+                        logger.warning(
+                            "Phase %s scientific gate remains blocked; continuing only to "
+                            "Phase %s in %s mode with provisional support evidence.",
+                            phase.id,
+                            next_phase_id,
+                            execution_modes[next_phase_id].value,
+                        )
+                    else:
+                        manifest.stopped_at = phase.id
+                        logger.warning(
+                            "Phase %s gate blocked advance; stopping (%s).",
+                            phase.id,
+                            decision.reason,
+                        )
+                        break
             unused_authorizations = sorted(
                 {item.authorization_id for item in authorizations} - used_authorization_ids
             )

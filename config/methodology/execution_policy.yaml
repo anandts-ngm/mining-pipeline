@@ -63,6 +63,13 @@ phase_policies:
     default_real_mode: null
     permitted_real_modes: []
     blocked_modes: []
+pending_source_gate_rules:
+  - source_phase_id: "03"
+    source_mode: support-evidence
+    consumer_phase_id: "04"
+    consumer_mode: legacy-comparator
+    require_qaqc_passed: true
+    require_pending_items: true
 operational_exception_controls:
   - control_id: OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE
     phase_id: "01"

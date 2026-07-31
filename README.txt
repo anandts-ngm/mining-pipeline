@@ -73,9 +73,10 @@ Implemented phase boundary
 Phases 00-04 have substantial deterministic implementations. Phase 03 remains
 scientifically incomplete. Phase 04 remains a legacy comparator inside the ordered
 pipeline, while a separate prospect-polygon implementation remains inactive until the exact Phase 03 handoff,
-reference-set calibration and required human reviews exist. The comparator cannot run
-against a valid real predecessor until the blocking Phase 03 scientific handoff is
-accepted; dry-run scaffolding does not establish readiness. Phases 05-11 and 99 are
+reference-set calibration and required human reviews exist. The comparator may run
+provisionally from an exact sealed Phase 03 support-evidence source when deterministic QA/QC
+passes; the Phase 03 scientific gate remains blocked and authoritative Phase 04 remains inactive.
+Dry-run scaffolding does not establish readiness. Phases 05-11 and 99 are
 registered stubs (scaffolding and templates only). The optional Phase 03 AI handoff
 promotes explicitly human-reviewed proposals into standalone accepted evidence;
 accepted evidence is support material and is not scientific (geologist) approval.

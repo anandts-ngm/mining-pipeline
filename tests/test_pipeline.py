@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from buduunkhad.core.gates import GateStatus, evaluate_gate
+from buduunkhad.core.gates import GateDecision, GateStatus, evaluate_gate
 from buduunkhad.core.paths import PHASE_DIRS, phase_dir
 from buduunkhad.core.qaqc import Decision, new_report
 from buduunkhad.pipeline import (
@@ -298,8 +298,8 @@ def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
     assert resumed.evidence_manifests == []
 
 
-def test_runner_stops_phase03_before_phase04(raw_archive):
-    """The real runner must enforce Phase 03's non-overridable scientific handoff gate."""
+def test_runner_preserves_phase03_gate_and_runs_only_the_legacy_comparator(raw_archive):
+    """Pending scientific work stays blocked while the provisional comparator can run."""
 
     config, register, _raw = raw_archive
     run_id = "strict-phase03-scientific-gate"
@@ -312,18 +312,22 @@ def test_runner_stops_phase03_before_phase04(raw_archive):
     )
 
     assert manifest.selected_phases == ["00", "01", "03", "04"]
-    assert [phase.phase_id for phase in manifest.phases] == ["00", "01", "03"]
-    assert manifest.stopped_at == "03"
-    phase03 = manifest.phases[-1]
+    assert [phase.phase_id for phase in manifest.phases] == ["00", "01", "03", "04"]
+    assert manifest.stopped_at == ""
+    phase03 = manifest.phases[-2]
+    phase04 = manifest.phases[-1]
     assert phase03.gate_status == GateStatus.BLOCKED.value
     assert not phase03.gate_overridden
     assert phase03.qaqc_pending
     assert phase03.pending_human_review_or_qaqc_count > 0
+    assert phase04.execution_mode.value == "legacy-comparator"
+    assert phase04.status == "ok"
     assert len([path for path in phase03.outputs if path.endswith("_Phase03_QAQC_Log.xlsx")]) == 1
     assert len([path for path in phase03.outputs if "Phase3_Technical_Processing_Log" in path]) == 1
 
     run_log = (config.runs_root / run_id / "logs" / "run.log").read_text(encoding="utf-8")
-    assert "Phase 03 gate blocked advance" in run_log
+    assert "Phase 03 scientific gate remains blocked" in run_log
+    assert "continuing only to Phase 04 in legacy-comparator mode" in run_log
     assert "use --override" not in run_log
 
 
@@ -392,7 +396,7 @@ def test_exact_operational_exception_is_scoped_and_recorded(raw_archive, monkeyp
     assert "AUTHORIZED OPERATIONAL EXCEPTION" in manifest.phases[1].gate_reason
 
 
-def test_phase04_cannot_bind_a_gate_blocked_phase03_source(raw_archive):
+def test_phase04_can_bind_a_pending_phase03_support_evidence_source(raw_archive):
     config, register, _raw = raw_archive
     source = run_pipeline(
         config,
@@ -402,7 +406,80 @@ def test_phase04_cannot_bind_a_gate_blocked_phase03_source(raw_archive):
     )
     assert source.stopped_at == "03"
 
-    with pytest.raises(RuntimeError, match="source Phase 03 gate did not permit advancement"):
+    result = run_pipeline(
+        config,
+        register,
+        only=["04"],
+        dry_run=False,
+        input_phase_runs={"01": source.run_id, "03": source.run_id},
+    )
+
+    assert result.stopped_at == ""
+    assert [phase.phase_id for phase in result.phases] == ["04"]
+    assert result.phases[0].execution_mode.value == "legacy-comparator"
+    bindings = {item.phase_id: item for item in result.source_phases}
+    assert bindings["03"].source_run_id == source.run_id
+
+
+def test_phase04_rejects_a_failed_phase03_source(raw_archive, monkeypatch):
+    from buduunkhad.phases.phase03_geology_synthesis import Phase03GeologySynthesis
+
+    config, register, _raw = raw_archive
+
+    def failed_qaqc(self, ctx):  # noqa: ARG001
+        report = new_report("03", "Geological synthesis")
+        report.add("Synthetic deterministic failure", "Must pass", decision=Decision.FAIL)
+        return report
+
+    monkeypatch.setattr(Phase03GeologySynthesis, "qaqc", failed_qaqc)
+    source = run_pipeline(
+        config,
+        register,
+        only=["00", "01", "03"],
+        dry_run=False,
+    )
+    assert source.stopped_at == "03"
+    assert source.error
+
+    with pytest.raises(RuntimeError, match="failed or incomplete runs cannot provide"):
+        run_pipeline(
+            config,
+            register,
+            only=["04"],
+            dry_run=False,
+            input_phase_runs={"01": source.run_id, "03": source.run_id},
+        )
+
+
+def test_phase04_rejects_a_blocked_phase03_source_without_pending_items(
+    raw_archive,
+    monkeypatch,
+):
+    from buduunkhad.phases.phase03_geology_synthesis import Phase03GeologySynthesis
+
+    config, register, _raw = raw_archive
+
+    def passed_qaqc(self, ctx):  # noqa: ARG001
+        report = new_report("03", "Geological synthesis")
+        report.add("Synthetic deterministic check", "Must pass", decision=Decision.PASS)
+        return report
+
+    def blocked_gate(self, qaqc, ctx):  # noqa: ARG001
+        return GateDecision("03", GateStatus.BLOCKED, "Synthetic non-pending block")
+
+    monkeypatch.setattr(Phase03GeologySynthesis, "qaqc", passed_qaqc)
+    monkeypatch.setattr(Phase03GeologySynthesis, "gate", blocked_gate)
+    source = run_pipeline(
+        config,
+        register,
+        only=["00", "01", "03"],
+        dry_run=False,
+    )
+    assert source.stopped_at == "03"
+    assert not source.error
+    assert source.phases[-1].qaqc_pending is False
+
+    with pytest.raises(RuntimeError, match="not a passing run with pending human items"):
         run_pipeline(
             config,
             register,

@@ -96,6 +96,7 @@ class ResolvedSourcePhase:
     gate_status: str
     gate_provisional: bool
     execution_mode: ExecutionMode
+    qaqc_pending: bool = False
 
 
 def generate_run_id(*, now: datetime | None = None, entropy: str | None = None) -> str:
@@ -613,6 +614,7 @@ def resolve_source_phase(
         gate_status=cast(str, gate_status),
         gate_provisional=cast(bool, gate_data["provisional"]),
         execution_mode=execution_mode,
+        qaqc_pending=cast(bool, phase["qaqc_pending"]),
     )
 
 

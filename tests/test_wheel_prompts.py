@@ -156,6 +156,9 @@ assert RUN_MANIFEST_FORMAT_VERSION == "2.2.0"
 assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0", "2.2.0"}}
 assert PUBLICATION_MANIFEST_FORMAT_VERSION == "1.2.0"
 assert execution_policy.phase_policies[4].default_real_mode is ExecutionMode.LEGACY_COMPARATOR
+assert len(execution_policy.pending_source_gate_rules) == 1
+assert execution_policy.pending_source_gate_rules[0].source_phase_id == "03"
+assert execution_policy.pending_source_gate_rules[0].consumer_phase_id == "04"
 binding = SourcePhaseBinding(
     phase_id="00",
     source_run_id="source-run",
@@ -165,12 +168,12 @@ binding = SourcePhaseBinding(
 assert binding.phase_id == "00"
 assert "P03-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase03.requirements}}
 assert "P04-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase04.requirements}}
-assert len(discrepancies.discrepancies) == 71
+assert len(discrepancies.discrepancies) == 72
 assert any(
     item.discrepancy_id == "METH-DISC-033"
     for item in discrepancies.discrepancies
 )
-assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-071"
+assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-072"
 assert len(discrepancies.unresolved()) == 0
 assert len(discrepancies.historical_unresolved()) == 23
 assert len(readiness.obligations) == 7

@@ -22,6 +22,6 @@ requirements:
     source_refs: [repository.methodology-contracts, methodology.master-v9]
     status: adopted
   - requirement_id: P04-GATE-PROVISIONAL-001
-    statement: Automated completion does not imply scientific approval; Phase 03 master-required pending items block its handoff, while other deterministic scaffold gates retain explicit provisional behavior.
-    source_refs: [repository.methodology-contracts, METH-DISC-031, METH-DISC-062]
+    statement: Automated completion does not imply scientific approval; Phase 03 master-required pending items continue to block its scientific handoff, but an exact sealed support-evidence run with passing deterministic QA/QC may feed only the provisional legacy comparator. This does not activate authoritative Phase 04.
+    source_refs: [repository.methodology-contracts, METH-DISC-031, METH-DISC-062, METH-DISC-067, METH-DISC-072]
     status: adopted

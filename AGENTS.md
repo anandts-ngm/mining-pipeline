@@ -56,8 +56,10 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   assessment/critique records, and an exact scientific-handoff resolver. It remains
   scientifically incomplete until qualified humans supply the required georeferencing,
   digitizing, interpretation, review, and deposit-model decisions.
-- Pending master-required Phase 03 human/scientific handoff items block advancement; no
-  operational exception turns them into completed evidence.
+- Pending master-required Phase 03 human/scientific items block its handoff and authoritative
+  downstream use; no operational exception turns them into completed evidence. An exact sealed
+  support-evidence run with passing deterministic QA/QC may feed only the Phase 04 legacy
+  comparator while the Phase 03 gate remains visibly blocked and all results remain provisional.
 - Runtime execution purposes are resolved before run-side effects through the byte-bound
   `execution_policy.yaml` contract. Current real defaults are Phase 00 `authoritative`, Phase 01
   `scaffold`, Phases 02–03 `support-evidence`, and Phase 04 `legacy-comparator`; Phase 05 and later
@@ -120,9 +122,11 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - The Phase 04 comparator continues to reject AI-lifecycle and handoff evidence. The separate
   prospect-polygon workflow consumes exact accepted Phase 03 evidence only through a scientific
   handoff and separately approved activation record.
-- The Phase 04 comparator is implemented but cannot currently execute in a valid real run because
-  every real Phase 04 source must include an advanceable Phase 03 gate, and the required Phase 03
-  scientific handoff evidence remains unresolved. Dry-run scaffolding is not operational readiness.
+- The Phase 04 comparator may execute in a valid real run from exact sealed Phase 01 inputs and a
+  Phase 03 support-evidence source whose deterministic QA/QC passes, even when explicit pending
+  human items keep the Phase 03 scientific gate blocked. This bridge is limited to
+  `legacy-comparator`; it does not satisfy the scientific handoff, activate authoritative Phase 04,
+  or make dry-run scaffolding operational evidence.
 - Run manifest v2.2 binds policy, per-phase execution mode, and every used scoped authorization.
   Publication manifest v1.2 preserves those identities and forces scaffold, support-evidence, and
   legacy-comparator packages to remain provisional; v2.0/v2.1 runs and v1.1 packages remain

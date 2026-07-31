@@ -141,6 +141,29 @@ class OperationalExceptionControl(BaseModel):
         return self
 
 
+class PendingSourceGateRule(BaseModel):
+    """One provisional source-to-consumer path that preserves a blocked scientific gate."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_phase_id: str = Field(pattern=r"^(?:0[0-9]|1[01]|99)$")
+    source_mode: ExecutionMode
+    consumer_phase_id: str = Field(pattern=r"^(?:0[0-9]|1[01]|99)$")
+    consumer_mode: ExecutionMode
+    require_qaqc_passed: Literal[True]
+    require_pending_items: Literal[True]
+
+    @model_validator(mode="after")
+    def _coherent_rule(self) -> PendingSourceGateRule:
+        if self.source_phase_id == self.consumer_phase_id:
+            raise ValueError("pending source-gate rule cannot consume its own phase")
+        if self.source_mode is not ExecutionMode.SUPPORT_EVIDENCE:
+            raise ValueError("pending source-gate rule requires support-evidence input")
+        if self.consumer_mode is not ExecutionMode.LEGACY_COMPARATOR:
+            raise ValueError("pending source-gate rule may feed only a legacy comparator")
+        return self
+
+
 class ExecutionPolicyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -150,6 +173,7 @@ class ExecutionPolicyRegistry(BaseModel):
         "obligations; not scientific approval or evidence that an obligation is resolved."
     ]
     phase_policies: tuple[PhaseExecutionPolicy, ...]
+    pending_source_gate_rules: tuple[PendingSourceGateRule, ...]
     operational_exception_controls: tuple[OperationalExceptionControl, ...]
     publication_policy: PublicationExecutionPolicy
 
@@ -161,6 +185,17 @@ class ExecutionPolicyRegistry(BaseModel):
         control_ids = tuple(item.control_id for item in self.operational_exception_controls)
         if len(set(control_ids)) != len(control_ids):
             raise ValueError("execution policy repeats an operational-exception control")
+        rule_keys = tuple(
+            (
+                item.source_phase_id,
+                item.source_mode,
+                item.consumer_phase_id,
+                item.consumer_mode,
+            )
+            for item in self.pending_source_gate_rules
+        )
+        if len(set(rule_keys)) != len(rule_keys):
+            raise ValueError("execution policy repeats a pending source-gate rule")
         return self
 
 
@@ -325,6 +360,14 @@ def load_execution_policy() -> ExecutionPolicyRegistry:
         if not set(control.permitted_modes) <= set(policies[control.phase_id].permitted_real_modes):
             raise ExecutionPolicyError(
                 "operational-exception control permits an unavailable execution mode"
+            )
+    for rule in registry.pending_source_gate_rules:
+        if (
+            rule.source_mode not in policies[rule.source_phase_id].permitted_real_modes
+            or rule.consumer_mode not in policies[rule.consumer_phase_id].permitted_real_modes
+        ):
+            raise ExecutionPolicyError(
+                "pending source-gate rule references an unavailable execution mode"
             )
     return registry
 

@@ -25,7 +25,7 @@ from buduunkhad.geospatial_ai.methodology import (
 )
 from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 72)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 73)}
 METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
@@ -359,7 +359,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 72)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 73)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -753,6 +753,8 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     phase04 = next(item for item in registry.boundaries if item.phase_id == "04")
     phase04_text = " ".join(phase04.deterministic_authority)
     assert "exact artifact, layer, role" in phase04_text
+    assert "pending human items" in phase04_text
+    assert "not a scientific handoff" in phase04_text
 
 
 def test_phase03_and_phase04_require_explicit_evidence_authority() -> None:
@@ -765,6 +767,9 @@ def test_phase03_and_phase04_require_explicit_evidence_authority() -> None:
     phase04_authority = phase04["P04-EVIDENCE-AUTHORITY-001"].statement
     assert "exact source artifact, layer, explicit evidence role" in phase04_authority
     assert "filename keywords" in phase04_authority
+    phase04_gate = phase04["P04-GATE-PROVISIONAL-001"].statement
+    assert "feed only the provisional legacy comparator" in phase04_gate
+    assert "does not activate authoritative Phase 04" in phase04_gate
 
 
 def test_operational_readiness_preserves_real_evidence_and_human_blockers() -> None:

@@ -1135,3 +1135,20 @@ discrepancies:
     implementation_evidence: config/methodology/phase02_processing.yaml Sentinel profile; Phase 02 input routing and exact-value regression tests.
     resolves_discrepancy_ids: [METH-DISC-070]
     related_discrepancy_ids: [METH-DISC-015, METH-DISC-035, METH-DISC-064, METH-DISC-070]
+  - discrepancy_id: METH-DISC-072
+    subject: phase03-pending-source-to-phase04-legacy-comparator
+    compared_sources:
+      - methodology.master-v9
+      - METH-DISC-067
+      - config/methodology/execution_policy.yaml
+      - src/buduunkhad/pipeline.py
+    statement: The strict Phase 03 scientific gate correctly blocks handoff, but it also prevented the explicitly non-authoritative Phase 04 legacy comparator from measuring preliminary support evidence.
+    operational_impact: Operators could not produce provisional comparator outputs even when Phase 03 deterministic processing completed successfully and every remaining gate item was explicitly pending human or scientific work.
+    status: resolved
+    resolution: Keep the Phase 03 gate blocked and non-overridable for scientific handoff, while permitting an exact sealed Phase 03 support-evidence run with passing deterministic QA/QC and pending items to feed only Phase 04 legacy-comparator mode. Failed QA/QC, absent pending items, authoritative Phase 04, publication approval and scientific claims remain blocked.
+    rationale: The comparator is a transparent diagnostic baseline rather than the master's authoritative prospect workflow. Preserving the blocked source gate and provisional publication status makes the limitation explicit while allowing deterministic measurements to be produced for review.
+    approver: repository-owner directive
+    resolved_on: "2026-07-31"
+    effective_version: methodology-contracts-v1.5.0
+    implementation_evidence: Byte-bound pending_source_gate_rules execution policy; same-run and predecessor-run Phase 03-to-04 bridge tests; unchanged authoritative Phase 04 activation requirements.
+    related_discrepancy_ids: [METH-DISC-003, METH-DISC-040, METH-DISC-041, METH-DISC-062, METH-DISC-067, METH-DISC-068]

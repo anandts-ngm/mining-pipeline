@@ -69,6 +69,14 @@ def test_execution_policy_covers_every_registered_phase_and_current_boundaries()
     assert tuple(item.control_id for item in registry.operational_exception_controls) == (
         "OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE",
     )
+    assert len(registry.pending_source_gate_rules) == 1
+    bridge = registry.pending_source_gate_rules[0]
+    assert bridge.source_phase_id == "03"
+    assert bridge.source_mode is ExecutionMode.SUPPORT_EVIDENCE
+    assert bridge.consumer_phase_id == "04"
+    assert bridge.consumer_mode is ExecutionMode.LEGACY_COMPARATOR
+    assert bridge.require_qaqc_passed is True
+    assert bridge.require_pending_items is True
 
 
 def test_policy_rejects_blocked_authoritative_and_unimplemented_real_modes() -> None:
