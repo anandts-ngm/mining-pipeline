@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from click import unstyle
 from typer.testing import CliRunner
 
 from buduunkhad.cli import app
 from buduunkhad.config import OUTPUT_ROOT_ENV, RAW_ROOT_ENV, RESULTS_UPLOAD_ROOT_ENV
+from buduunkhad.core.qaqc import Decision, new_report
+from buduunkhad.phases.phase00_archive import Phase00Archive
+from buduunkhad.pipeline import RunManifest
 
 runner = CliRunner()
 
@@ -149,3 +153,65 @@ def test_real_run_automatically_uploads_curated_results(raw_archive, monkeypatch
     assert "Drive-synced results:" in result.stdout
     uploaded = list(upload_root.glob("Buduunkhad_Results_*"))
     assert len(uploaded) == 1
+
+
+def test_failed_run_exit_and_message_do_not_depend_on_upload_root(
+    raw_archive,
+    monkeypatch,
+) -> None:
+    _config, _register, raw_root = raw_archive
+    config_path = raw_root.parent.parent / "config" / "project.yaml"
+    upload_root = raw_root.parent.parent / "drive-results"
+
+    def failed_qaqc(self, ctx):  # noqa: ARG001
+        report = new_report("00", "Raw Files Archive")
+        report.add("Archive acceptance", "Synthetic failure", decision=Decision.FAIL)
+        return report
+
+    monkeypatch.setattr(Phase00Archive, "qaqc", failed_qaqc)
+    without_upload = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "00"],
+    )
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(upload_root))
+    with_upload = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "00"],
+    )
+
+    for result in (without_upload, with_upload):
+        assert result.exit_code == 2
+        assert "Run failed: Phase 00 QA/QC failed before artifact sealing" in result.output
+        assert "Pipeline succeeded" not in result.output
+        assert "automatic results upload failed" not in result.output.casefold()
+    assert not upload_root.exists()
+
+
+def test_controlled_gate_stop_still_curates_results(project, monkeypatch) -> None:
+    _config, _register, work = project
+    config_path = work / "config" / "project.yaml"
+    upload_root = work / "drive-results"
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(upload_root))
+    manifest = RunManifest(
+        run_id="controlled-gate-stop",
+        started_at="2026-07-31T00:00:00+00:00",
+        dry_run=False,
+        override=False,
+        selected_phases=["03"],
+        stopped_at="03",
+    )
+    calls: list[tuple[str, bool]] = []
+
+    def fake_curate(cfg, *, run_id, upload, **kwargs):  # noqa: ARG001
+        calls.append((run_id, upload))
+        return SimpleNamespace(root=work / "results" / "latest"), None
+
+    monkeypatch.setattr("buduunkhad.cli.run_pipeline", lambda *args, **kwargs: manifest)
+    monkeypatch.setattr("buduunkhad.cli._curate_and_upload_results", fake_curate)
+
+    result = runner.invoke(app, ["run", "--config", str(config_path), "--only", "03"])
+
+    assert result.exit_code == 0, result.output
+    assert "Stopped at phase 03" in result.output
+    assert "Curated results:" in result.output
+    assert calls == [(manifest.run_id, True)]

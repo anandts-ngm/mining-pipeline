@@ -341,8 +341,6 @@ def materialize_results_view(
             shutil.rmtree(backup)
         return ResultsViewResult(root=latest, manifest=manifest, created=True)
     except (ArtifactSealError, OSError, RunStorageError, ValueError) as exc:
-        if isinstance(exc, ResultsViewError):
-            raise
         raise ResultsViewError(str(exc)) from exc
     finally:
         if staging.exists():

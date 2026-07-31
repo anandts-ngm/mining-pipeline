@@ -42,10 +42,11 @@ def upload_results_view(
     """Copy one exact curated view into a versioned external destination."""
 
     source = _existing_root(results_view, "curated results view")
-    destination_candidate = Path(upload_root).absolute().resolve(strict=False)
+    destination_candidate = _comparison_root(upload_root, "results upload root")
     _reject_overlap(source, destination_candidate)
     for protected in protected_roots:
-        _reject_overlap(protected.resolve(strict=False), destination_candidate)
+        protected_root = _comparison_root(protected, "protected root")
+        _reject_overlap(protected_root, destination_candidate)
     destination_root = _external_root(destination_candidate)
     try:
         manifest = verify_results_view(source)
@@ -95,8 +96,6 @@ def upload_results_view(
             created=True,
         )
     except (ArtifactSealError, OSError, ResultsViewError, ValueError) as exc:
-        if isinstance(exc, ResultsUploadError):
-            raise
         raise ResultsUploadError(str(exc)) from exc
     finally:
         if staging.exists():
@@ -162,6 +161,13 @@ def _external_root(path: Path) -> Path:
     if not resolved.is_dir():
         raise ResultsUploadError(f"results upload root is not a directory: {resolved}")
     return resolved
+
+
+def _comparison_root(path: Path, description: str) -> Path:
+    candidate = Path(path).absolute()
+    if has_symlink_component(candidate):
+        raise ResultsUploadError(f"{description} must not use a symlink: {candidate}")
+    return candidate.resolve(strict=False)
 
 
 def _reject_overlap(source: Path, destination: Path) -> None:

@@ -522,6 +522,9 @@ def run(
         typer.secho(str(exc), fg="red")
         raise typer.Exit(2) from exc
     _echo_manifest(manifest, cfg.runs_root)
+    if manifest.error:
+        typer.secho(f"Run failed: {manifest.error}", fg="red", err=True)
+        raise typer.Exit(2)
     if not manifest.dry_run and cfg.results_upload_root is not None:
         from buduunkhad.core.results_upload import ResultsUploadError
         from buduunkhad.core.results_view import ResultsViewError
@@ -533,7 +536,7 @@ def run(
                 upload=upload_results,
             )
         except (ResultsUploadError, ResultsViewError) as exc:
-            typer.secho(f"Pipeline succeeded, but automatic results upload failed: {exc}", fg="red")
+            typer.secho(f"Automatic results upload failed after the run: {exc}", fg="red")
             raise typer.Exit(2) from exc
         typer.echo(f"Curated results: {results.root}")
         if uploaded is not None:

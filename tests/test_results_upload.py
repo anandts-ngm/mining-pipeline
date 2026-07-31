@@ -12,6 +12,13 @@ from buduunkhad.core.results_view import materialize_results_view
 from buduunkhad.pipeline import run_pipeline
 
 
+def _create_directory_symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"operating system cannot create the required symlink: {exc}")
+
+
 def test_upload_results_is_complete_portable_and_idempotent(raw_archive):
     config, register, _raw = raw_archive
     run = run_pipeline(config, register, only=["00", "01"], dry_run=False)
@@ -95,4 +102,36 @@ def test_upload_results_rejects_protected_destination(raw_archive):
             curated.root,
             config.raw_root,
             protected_roots=(config.raw_root,),
+        )
+    nested_destination = curated.root / "unexpected-upload"
+    with pytest.raises(ResultsUploadError, match="must not overlap"):
+        upload_results_view(curated.root, nested_destination)
+    assert not nested_destination.exists()
+
+
+def test_upload_results_rejects_symlinked_external_roots(raw_archive):
+    config, register, _raw = raw_archive
+    run = run_pipeline(config, register, only=["00"], dry_run=False)
+    curated = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results",
+        run_id=run.run_id,
+    )
+    external = config.base_dir / "external"
+    external.mkdir()
+    upload_link = config.base_dir / "upload-link"
+    protected_link = config.base_dir / "protected-link"
+    _create_directory_symlink_or_skip(upload_link, external)
+    _create_directory_symlink_or_skip(protected_link, config.raw_root)
+
+    with pytest.raises(ResultsUploadError, match="upload root must not use a symlink"):
+        upload_results_view(curated.root, upload_link)
+    with pytest.raises(ResultsUploadError, match="protected root must not use a symlink"):
+        upload_results_view(
+            curated.root,
+            external,
+            protected_roots=(protected_link,),
         )
