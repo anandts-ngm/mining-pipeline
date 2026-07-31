@@ -80,6 +80,14 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - The default profile is `legacy`: AI disabled, provider `disabled`, and external egress false.
 - The keyless AI-to-QGIS slice can prepare inspectable packages, ingest saved responses, validate
   and transform pixel geometry, produce `AI_DRAFT` GIS/QGIS outputs, and evaluate them offline.
+- A generated integrated Phase 03 QGIS review project can display exact sealed Phase 01–03
+  outputs and validated AI review packages together. It does not merge their storage or trust
+  lifecycles: pipeline layers remain read-only and AI proposal layers remain editable review work.
+- One local `BUDUUNKHAD_PROJECT_ROOT` may define the standard `raw`, `snapshots`, `work`,
+  `current`, `results`, `evaluation`, and `publish` layout. Complete sealed run artifacts remain
+  under `work/runs`; `results/latest` is an atomic, hash-recorded operator view containing only
+  declared Phase 00–04 outputs from one exact run plus explicitly selected, verified AI review
+  packages and an optional rebased integrated QGIS project.
 - Optional OpenAI and Anthropic adapters are lazy, keyless until execution, and require explicit
   non-legacy configuration and egress approval.
 - The Phase 03 handoff promotes explicit human decisions only to standalone `ACCEPTED_EVIDENCE`.

@@ -15,9 +15,12 @@ are a machine draft — cartographic refinement stays with the geologist.
 
 from __future__ import annotations
 
+import math
+import os
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from xml.etree import ElementTree as ET
 
 #: config geometry vocab -> QGIS maplayer ``geometry`` attribute
@@ -57,6 +60,23 @@ class QgzLayer:
     subset_string: str | None = None
     epsg: int | None = None
     read_only: bool = False
+
+
+@dataclass(frozen=True)
+class QgzExtent:
+    """Finite project-canvas bounds in the project CRS."""
+
+    xmin: float
+    ymin: float
+    xmax: float
+    ymax: float
+
+    def __post_init__(self) -> None:
+        values = (self.xmin, self.ymin, self.xmax, self.ymax)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("QGIS project extent must contain only finite coordinates")
+        if self.xmax <= self.xmin or self.ymax <= self.ymin:
+            raise ValueError("QGIS project extent must have positive width and height")
 
 
 def polygon_outline(color_rgba: str, width_mm: float, *, dash: bool = False):
@@ -153,6 +173,7 @@ def write_layered_qgz(
     epsg: int,
     title: str,
     layers: list[QgzLayer],
+    initial_extent: QgzExtent | None = None,
     qgis_version: str = "3.34.0",
 ) -> Path:
     """Write a .qgz whose project contains ``layers`` top-to-bottom in tree order."""
@@ -169,6 +190,21 @@ def write_layered_qgz(
     properties = ET.SubElement(qgis, "properties")
     spatial = ET.SubElement(properties, "SpatialRefSys")
     ET.SubElement(spatial, "ProjectionsEnabled", {"type": "int"}).text = "1"
+    if initial_extent is not None:
+        map_canvas = ET.SubElement(
+            qgis,
+            "mapcanvas",
+            {"name": "theMapCanvas", "annotationsVisible": "1"},
+        )
+        ET.SubElement(map_canvas, "units").text = "meters"
+        extent = ET.SubElement(map_canvas, "extent")
+        ET.SubElement(extent, "xmin").text = str(initial_extent.xmin)
+        ET.SubElement(extent, "ymin").text = str(initial_extent.ymin)
+        ET.SubElement(extent, "xmax").text = str(initial_extent.xmax)
+        ET.SubElement(extent, "ymax").text = str(initial_extent.ymax)
+        ET.SubElement(map_canvas, "rotation").text = "0"
+        destination = ET.SubElement(map_canvas, "destinationsrs")
+        destination.append(_srs_element(epsg))
 
     tree_group = ET.SubElement(qgis, "layer-tree-group")
     project_layers = ET.SubElement(qgis, "projectlayers")
@@ -251,3 +287,81 @@ def read_qgz_layers(path: Path) -> list[dict[str, str]]:
             }
         )
     return out
+
+
+def copy_qgz_rebased(
+    source: Path,
+    target: Path,
+    *,
+    copied_sources: Mapping[Path, Path] | None = None,
+    require_mapped_sources: bool = False,
+) -> Path:
+    """Copy a generated QGIS project while preserving every datasource relationship.
+
+    A curated view may relocate declared deliverables while leaving large internal or editable
+    review artifacts in their run directories. Exact mapped sources follow their curated copies;
+    all other sources remain linked to their original bytes using a new relative path.
+    """
+
+    source = Path(source).resolve(strict=True)
+    target = Path(target)
+    if source == target.resolve(strict=False):
+        raise ValueError("QGIS project copy target must differ from its source")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    mappings = {
+        Path(original).resolve(strict=True): Path(copied).resolve(strict=False)
+        for original, copied in (copied_sources or {}).items()
+    }
+    try:
+        with zipfile.ZipFile(source) as archive:
+            names = archive.namelist()
+            if len(names) != len(set(names)):
+                raise ValueError("QGIS project archive contains duplicate members")
+            for name in names:
+                member_path = PurePosixPath(name)
+                if member_path.is_absolute() or ".." in member_path.parts or "\\" in name:
+                    raise ValueError("QGIS project archive contains an unsafe member path")
+            qgs_names = [name for name in names if name.casefold().endswith(".qgs")]
+            if len(qgs_names) != 1:
+                raise ValueError("QGIS project archive must contain exactly one .qgs project")
+            qgs_name = qgs_names[0]
+            members = {name: archive.read(name) for name in names if not name.endswith("/")}
+            root = ET.fromstring(members[qgs_name])
+    except (ET.ParseError, KeyError, zipfile.BadZipFile) as exc:
+        raise ValueError("QGIS project archive is invalid") from exc
+
+    def rebase(value: str) -> str:
+        path_part, separator, layer_part = value.partition("|")
+        if not path_part:
+            raise ValueError("QGIS project contains an empty datasource")
+        original = Path(path_part)
+        if not original.is_absolute():
+            original = source.parent / original
+        resolved = original.resolve(strict=True)
+        if not resolved.is_file():
+            raise ValueError(f"QGIS datasource is not a regular file: {resolved}")
+        if require_mapped_sources and resolved not in mappings:
+            raise ValueError(f"QGIS datasource has no curated copy: {resolved}")
+        destination = mappings.get(resolved, resolved)
+        relative = os.path.relpath(destination, target.parent.resolve()).replace("\\", "/")
+        return f"{relative}{separator}{layer_part}"
+
+    for node in root.iter("layer-tree-layer"):
+        value = node.get("source")
+        if value:
+            node.set("source", rebase(value))
+    for datasource in root.iter("datasource"):
+        if datasource.text:
+            datasource.text = rebase(datasource.text)
+
+    ET.indent(root)
+    members[qgs_name] = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    if target.exists():
+        target.unlink()
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, payload in sorted(members.items()):
+            member = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.external_attr = 0o600 << 16
+            archive.writestr(member, payload)
+    return target

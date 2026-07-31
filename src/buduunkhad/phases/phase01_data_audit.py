@@ -41,6 +41,7 @@ class Phase01DataAudit(Phase):
     _n_buffers: int
     _boundary_validation: boundary_validation.BoundaryValidationRecord | None
     _boundary_validation_path: Path | None
+    _project_extent: qgis_project.QgzExtent | None
     _raster_audits: list[crs_mod.RasterAudit]
     _master_layers: list[str]
     _handoff_paths: list[Path]
@@ -53,6 +54,7 @@ class Phase01DataAudit(Phase):
         self._n_buffers = 0
         self._boundary_validation = None
         self._boundary_validation_path = None
+        self._project_extent = None
         self._raster_audits = []
         self._master_layers = []
         self._handoff_paths = []
@@ -256,6 +258,8 @@ class Phase01DataAudit(Phase):
         # buffers
         buffers_gdf = vector_io.buffer_rings(gdf32, cfg.boundary.buffers_m, epsg)
         self._n_buffers = len(buffers_gdf)
+        xmin, ymin, xmax, ymax = (float(value) for value in buffers_gdf.total_bounds)
+        self._project_extent = qgis_project.QgzExtent(xmin, ymin, xmax, ymax)
         buffer_name = naming.data_name(
             cfg.data_prefix,
             "Project",
@@ -372,6 +376,7 @@ class Phase01DataAudit(Phase):
             epsg=cfg.target_epsg,
             title=f"{cfg.project.name} Master",
             layers=layers,
+            initial_extent=self._project_extent,
         )
         return len(layers)
 

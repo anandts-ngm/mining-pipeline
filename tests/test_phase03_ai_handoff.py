@@ -18,13 +18,23 @@ import pytest
 import rasterio
 from rasterio.transform import from_origin
 from shapely.affinity import translate
-from shapely.geometry import GeometryCollection, Polygon, mapping, shape
+from shapely.geometry import GeometryCollection, Point, Polygon, mapping, shape
 from typer.testing import CliRunner
 
 from buduunkhad.ai.contracts import AIUsage, RasterTileLocator, TaskType
 from buduunkhad.ai.fingerprint import sha256_file
 from buduunkhad.cli import app
+from buduunkhad.core.qgis_project import read_qgz_layers
+from buduunkhad.core.results_view import materialize_results_view
+from buduunkhad.core.run_storage import (
+    RunLayout,
+    RunStorageError,
+    seal_and_finalize_phase,
+)
 from buduunkhad.geospatial_ai.draft_gpkg import process_validated_response
+from buduunkhad.geospatial_ai.integrated_review import (
+    build_integrated_phase03_review_project,
+)
 from buduunkhad.geospatial_ai.manifests import (
     ResponseOrigin,
     SavedProviderResponse,
@@ -226,6 +236,127 @@ def _import(case: HandoffCase):
     )
 
 
+def _sealed_pipeline_run(
+    tmp_path: Path,
+    *,
+    runs_root: Path | None = None,
+) -> tuple[Path, str]:
+    runs_root = runs_root or tmp_path / "pipeline-runs"
+    run_id = "pipeline-review-source"
+    layout = RunLayout(runs_root, run_id)
+    layout.initialize()
+    phase_records: list[dict[str, object]] = []
+    timestamp = "2026-07-16T00:00:00+00:00"
+    for phase_id in ("01", "02", "03"):
+        stage = layout.staging_phase(phase_id)
+        stage.mkdir()
+        if phase_id == "01":
+            output = stage / "boundary.gpkg"
+            schema = {"geometry": "Polygon", "properties": {"feature_id": "str"}}
+            geometry = mapping(
+                Polygon(
+                    [
+                        (499_000, 5_199_000),
+                        (502_000, 5_199_000),
+                        (502_000, 5_202_000),
+                        (499_000, 5_202_000),
+                        (499_000, 5_199_000),
+                    ]
+                )
+            )
+            layer = "license_boundary"
+        elif phase_id == "02":
+            output = _raster(stage / "phase02-hillshade.tif", target_crs="EPSG:32647")
+            layer = ""
+            geometry = None
+            schema = None
+        else:
+            output = stage / "phase03-evidence.gpkg"
+            schema = {"geometry": "Point", "properties": {"feature_id": "str"}}
+            geometry = mapping(Point(500_500, 5_200_500))
+            layer = "mineral_occurrences_point"
+        if schema is not None:
+            with fiona.open(
+                output,
+                "w",
+                driver="GPKG",
+                layer=layer,
+                schema=schema,
+                crs="EPSG:32647",
+            ) as collection:
+                collection.write(
+                    {
+                        "geometry": geometry,
+                        "properties": {"feature_id": f"P{phase_id}-1"},
+                    }
+                )
+            if phase_id == "03":
+                with fiona.open(
+                    output,
+                    "w",
+                    driver="GPKG",
+                    layer="pXRF_reading_table",
+                    schema={"geometry": "None", "properties": {"sample_id": "str"}},
+                ) as collection:
+                    collection.write(
+                        {
+                            "geometry": None,
+                            "properties": {"sample_id": "SYNTHETIC-1"},
+                        }
+                    )
+        _finalized, artifacts, sealed = seal_and_finalize_phase(
+            layout,
+            phase_id,
+            (output,),
+        )
+        pending = phase_id == "03"
+        phase_records.append(
+            {
+                "phase_id": phase_id,
+                "name": f"Phase {phase_id}",
+                "mode": "real",
+                "status": "ok",
+                "outputs": [item.path for item in artifacts],
+                "output_artifacts": [item.model_dump(mode="json") for item in artifacts],
+                "sealed_files": [item.model_dump(mode="json") for item in sealed],
+                "qaqc_passed": True,
+                "qaqc_pending": pending,
+                "pending_human_review_or_qaqc_count": 1 if pending else 0,
+                "gate": {
+                    "status": "blocked" if pending else "go",
+                    "reason": "Synthetic review fixture.",
+                    "overridden": False,
+                    "provisional": False,
+                },
+                "error": "",
+            }
+        )
+    layout.manifest_path.write_text(
+        json.dumps(
+            {
+                "manifest_format_version": "2.1.0",
+                "run_layout_version": "run-isolated-v1",
+                "run_id": run_id,
+                "started_at": timestamp,
+                "finished_at": timestamp,
+                "dry_run": False,
+                "override": False,
+                "selected_phases": ["01", "02", "03"],
+                "stopped_at": "03",
+                "error": "",
+                "warnings": [],
+                "execution_identity": {},
+                "evidence_manifests": [],
+                "source_phases": [],
+                "phases": phase_records,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return runs_root, run_id
+
+
 def _review(
     case: HandoffCase,
     layer: DraftLayerName,
@@ -328,6 +459,137 @@ def test_review_qgis_project_has_relative_grouped_filtered_layers(
     project_xml = ET.tostring(root, encoding="unicode")
     assert str(handoff_case.roots.require_work_root()) not in project_xml
     assert str(handoff_case.source) not in project_xml
+    extent = root.find("mapcanvas/extent")
+    assert extent is not None
+    assert float(extent.findtext("xmax", "0")) > float(extent.findtext("xmin", "0"))
+    assert float(extent.findtext("ymax", "0")) > float(extent.findtext("ymin", "0"))
+
+
+def test_builds_one_review_project_over_sealed_pipeline_and_ai_layers(
+    handoff_case: HandoffCase,
+    tmp_path: Path,
+) -> None:
+    manifest = _import(handoff_case)
+    runs_root, pipeline_run_id = _sealed_pipeline_run(tmp_path)
+    output = (
+        handoff_case.roots.run_directory(handoff_case.run_id)
+        / "phase03-review"
+        / "integrated-phase03-review.qgz"
+    )
+    result = build_integrated_phase03_review_project(
+        runs_root=runs_root,
+        pipeline_run_id=pipeline_run_id,
+        ai_run_id=handoff_case.run_id,
+        review_packages=(handoff_case.review_directory,),
+        output=output,
+        roots=handoff_case.roots,
+        target_epsg=32647,
+    )
+    assert result == output
+    layers = read_qgz_layers(result)
+    names = {item["name"] for item in layers}
+    assert "P01 license_boundary" in names
+    assert "P02 phase02-hillshade" in names
+    assert "P03 mineral_occurrences_point" in names
+    assert "P03 pXRF_reading_table" in names
+    assert f"AI Pending {manifest.source_asset_id[:12]} geology_units" in names
+    assert f"AI Source {manifest.source_asset_id[:12]} 1" in names
+    assert all(
+        not Path(item["datasource"].split("|", maxsplit=1)[0]).is_absolute() for item in layers
+    )
+    with zipfile.ZipFile(result) as archive:
+        root = ET.fromstring(
+            archive.read(next(name for name in archive.namelist() if name.endswith(".qgs")))
+        )
+    groups = {item.get("name") for item in root.iter("layer-tree-group")}
+    assert {
+        "Phase 01 Sealed Outputs",
+        "Phase 02 Sealed Outputs",
+        "Phase 03 Sealed Outputs",
+        f"AI Review {manifest.source_asset_id[:12]}",
+    } <= groups
+    assert root.find("mapcanvas/extent") is not None
+
+
+def test_curated_results_include_portable_verified_ai_review_package(
+    handoff_case: HandoffCase,
+    tmp_path: Path,
+) -> None:
+    package = _import(handoff_case)
+    runs_root, pipeline_run_id = _sealed_pipeline_run(
+        tmp_path,
+        runs_root=handoff_case.roots.require_work_root() / "runs",
+    )
+    integrated = (
+        handoff_case.roots.run_directory(handoff_case.run_id)
+        / "phase03-review"
+        / "integrated-phase03-review.qgz"
+    )
+    build_integrated_phase03_review_project(
+        runs_root=runs_root,
+        pipeline_run_id=pipeline_run_id,
+        ai_run_id=handoff_case.run_id,
+        review_packages=(handoff_case.review_directory,),
+        output=integrated,
+        roots=handoff_case.roots,
+        target_epsg=32647,
+    )
+
+    result = materialize_results_view(
+        project_name="Synthetic",
+        raw_root=handoff_case.roots.raw_root,
+        output_root=tmp_path / "current",
+        runs_root=runs_root,
+        results_root=tmp_path / "results",
+        run_id=pipeline_run_id,
+        snapshot_root=handoff_case.roots.snapshot_root,
+        review_project=integrated,
+        review_packages=(handoff_case.review_directory,),
+    )
+
+    assert result.manifest.review_package_ids == (package.package_id,)
+    assert {item.origin for item in result.manifest.files} == {
+        "pipeline-output",
+        "review-package",
+        "integrated-project",
+    }
+    assert len(list(result.root.rglob("*.pgw"))) == len(
+        [
+            relative
+            for relative, _digest in package.source_preview_files
+            if relative.endswith(".pgw")
+        ]
+    )
+    curated_root = result.root.resolve()
+    for layer in read_qgz_layers(result.root / "Buduunkhad.qgz"):
+        datasource = Path(layer["datasource"].partition("|")[0])
+        resolved = (result.root / datasource).resolve(strict=True)
+        resolved.relative_to(curated_root)
+
+
+def test_integrated_review_rejects_mutated_sealed_pipeline_output(
+    handoff_case: HandoffCase,
+    tmp_path: Path,
+) -> None:
+    _import(handoff_case)
+    runs_root, pipeline_run_id = _sealed_pipeline_run(tmp_path)
+    sealed = runs_root / pipeline_run_id / "phases" / "02" / "phase02-hillshade.tif"
+    sealed.write_bytes(sealed.read_bytes() + b"mutated")
+    output = (
+        handoff_case.roots.run_directory(handoff_case.run_id)
+        / "phase03-review"
+        / "integrated-phase03-review.qgz"
+    )
+    with pytest.raises(RunStorageError, match="sealed run artifact changed"):
+        build_integrated_phase03_review_project(
+            runs_root=runs_root,
+            pipeline_run_id=pipeline_run_id,
+            ai_run_id=handoff_case.run_id,
+            review_packages=(handoff_case.review_directory,),
+            output=output,
+            roots=handoff_case.roots,
+            target_epsg=32647,
+        )
 
 
 def test_rejects_invalid_provenance_and_draft_corruption(handoff_case: HandoffCase) -> None:

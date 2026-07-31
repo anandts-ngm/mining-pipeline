@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from buduunkhad.config import RAW_ROOT_ENV, WORK_ROOT_ENV
+from buduunkhad.config import (
+    OUTPUT_ROOT_ENV,
+    PROJECT_ROOT_ENV,
+    RAW_ROOT_ENV,
+    RESULTS_ROOT_ENV,
+    WORK_ROOT_ENV,
+)
 from buduunkhad.core.paths import PHASE_DIRS
 
 
@@ -113,6 +119,36 @@ def test_work_root_env_override_places_runs_below_work_root(project, monkeypatch
 
     assert config.runs_root == target / "runs"
     assert config.evidence_root == target / "evidence-authority"
+    assert config.results_root == target.parent / "results"
+
+
+def test_project_root_defines_standard_local_layout(project, monkeypatch):
+    config, _register, tmp_path = project
+    root = tmp_path / "buduunkhad-project"
+    monkeypatch.setenv(PROJECT_ROOT_ENV, str(root))
+    for name in (RAW_ROOT_ENV, OUTPUT_ROOT_ENV, WORK_ROOT_ENV, RESULTS_ROOT_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+    assert config.raw_root == root / "raw"
+    assert config.output_root == root / "current"
+    assert config.runs_root == root / "work" / "runs"
+    assert config.evidence_root == root / "work" / "evidence-authority"
+    assert config.results_root == root / "results"
+
+
+def test_specific_roots_override_standard_project_layout(project, monkeypatch):
+    config, _register, tmp_path = project
+    monkeypatch.setenv(PROJECT_ROOT_ENV, str(tmp_path / "project"))
+    monkeypatch.setenv(RAW_ROOT_ENV, str(tmp_path / "specific-raw"))
+    monkeypatch.setenv(OUTPUT_ROOT_ENV, str(tmp_path / "specific-current"))
+    monkeypatch.setenv(WORK_ROOT_ENV, str(tmp_path / "specific-work"))
+    monkeypatch.setenv(RESULTS_ROOT_ENV, str(tmp_path / "specific-results"))
+
+    assert config.raw_root == tmp_path / "specific-raw"
+    assert config.output_root == tmp_path / "specific-current"
+    assert config.runs_root == tmp_path / "specific-work" / "runs"
+    assert config.evidence_root == tmp_path / "specific-work" / "evidence-authority"
+    assert config.results_root == tmp_path / "specific-results"
 
 
 def test_phase_dirs_cover_workflow():

@@ -146,6 +146,17 @@ def test_phase01_real_run(raw_archive):
     for e in entries:
         rel = e["datasource"].split("|", 1)[0]
         assert (qgz.parent / rel).resolve().exists(), f"datasource does not resolve: {rel}"
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    with zipfile.ZipFile(qgz) as archive:
+        root = ET.fromstring(
+            archive.read(next(name for name in archive.namelist() if name.endswith(".qgs")))
+        )
+    extent = root.find("mapcanvas/extent")
+    assert extent is not None
+    assert float(extent.findtext("xmax", "0")) > float(extent.findtext("xmin", "0"))
+    assert float(extent.findtext("ymax", "0")) > float(extent.findtext("ymin", "0"))
     _assert_phase1_deliverables(pdir)
 
     report = phase.qaqc(ctx)

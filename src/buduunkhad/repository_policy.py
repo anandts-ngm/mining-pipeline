@@ -33,6 +33,7 @@ FORBIDDEN_DIRECTORIES = frozenset(
         "log",
         "logs",
         "outputs",
+        "results",
         "private_evaluations",
         "qgis_profiles",
         "qgis_runtime",

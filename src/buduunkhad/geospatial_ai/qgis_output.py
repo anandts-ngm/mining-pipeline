@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from buduunkhad.core.qgis_project import (
+    QgzExtent,
     QgzLayer,
     line_symbol,
     point_symbol,
@@ -13,7 +14,9 @@ from buduunkhad.core.qgis_project import (
     write_layered_qgz,
 )
 from buduunkhad.geospatial_ai.path_safety import StorageRoots
+from buduunkhad.geospatial_ai.pixel_world import transformed_source_extent
 from buduunkhad.geospatial_ai.schemas import DraftLayerName
+from buduunkhad.geospatial_ai.source_assets import register_raster_source
 
 _STYLES = {
     DraftLayerName.GEOLOGY_UNITS: polygon_outline("80,130,180,255", 0.5),
@@ -82,11 +85,18 @@ def write_ai_draft_qgz(
             visible=True,
         )
     )
+    source_record = register_raster_source(
+        source_raster,
+        roots=roots,
+        target_crs=f"EPSG:{epsg}",
+    )
+    xmin, ymin, xmax, ymax = transformed_source_extent(source_record).bounds
     return write_layered_qgz(
         project,
         epsg=epsg,
         title=f"Buduunkhad {run_id} AI_DRAFT",
         layers=layers,
+        initial_extent=QgzExtent(xmin, ymin, xmax, ymax),
     )
 
 

@@ -27,10 +27,13 @@ from pydantic import (
     model_validator,
 )
 
-#: Per-machine path overrides (so a local Drive/synced path is never committed).
+#: One per-machine project root can define the standard local storage layout.
+PROJECT_ROOT_ENV = "BUDUUNKHAD_PROJECT_ROOT"
+#: Specific overrides remain available for non-standard deployments.
 RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
 OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
 WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
+RESULTS_ROOT_ENV = "BUDUUNKHAD_RESULTS_ROOT"
 
 # --------------------------------------------------------------------------- #
 # Register model
@@ -364,22 +367,28 @@ class ProjectConfig(BaseModel):
 
     @property
     def raw_root(self) -> Path:
-        # Per-machine override (e.g. a Drive-for-Desktop path) wins, so the
-        # The committed default stays portable. Configuration defines identity; AGENTS.md defines
-        # the raw-path safety and immutability boundary.
         override = os.environ.get(RAW_ROOT_ENV)
-        return Path(override).expanduser() if override else self._resolve(self.paths.raw_root)
+        if override:
+            return Path(override).expanduser()
+        project_root = self._environment_project_root
+        return project_root / "raw" if project_root else self._resolve(self.paths.raw_root)
 
     @property
     def output_root(self) -> Path:
         override = os.environ.get(OUTPUT_ROOT_ENV)
-        return Path(override).expanduser() if override else self._resolve(self.paths.output_root)
+        if override:
+            return Path(override).expanduser()
+        project_root = self._environment_project_root
+        return project_root / "current" if project_root else self._resolve(self.paths.output_root)
 
     @property
     def runs_root(self) -> Path:
         work_root = os.environ.get(WORK_ROOT_ENV)
         if work_root:
             return Path(work_root).expanduser() / "runs"
+        project_root = self._environment_project_root
+        if project_root:
+            return project_root / "work" / "runs"
         return self._resolve(self.paths.runs_root)
 
     @property
@@ -389,7 +398,30 @@ class ProjectConfig(BaseModel):
         work_root = os.environ.get(WORK_ROOT_ENV)
         if work_root:
             return Path(work_root).expanduser() / "evidence-authority"
+        project_root = self._environment_project_root
+        if project_root:
+            return project_root / "work" / "evidence-authority"
         return self.runs_root.parent / "evidence-authority"
+
+    @property
+    def results_root(self) -> Path:
+        """Operator-facing curated results, separate from execution and publication."""
+
+        override = os.environ.get(RESULTS_ROOT_ENV)
+        if override:
+            return Path(override).expanduser()
+        project_root = self._environment_project_root
+        if project_root:
+            return project_root / "results"
+        work_root = os.environ.get(WORK_ROOT_ENV)
+        if work_root:
+            return Path(work_root).expanduser().parent / "results"
+        return self.output_root.parent / "results"
+
+    @property
+    def _environment_project_root(self) -> Path | None:
+        value = os.environ.get(PROJECT_ROOT_ENV)
+        return Path(value).expanduser() if value else None
 
     @property
     def register_path(self) -> Path:

@@ -4,6 +4,7 @@
 data/
 raw/
 outputs/
+results/
 control/
 runs/
 evidence-authority/

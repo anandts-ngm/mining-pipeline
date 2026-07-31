@@ -5,12 +5,12 @@ buduunkhad info                 # show project constants
 buduunkhad validate             # check raw inputs are present
 buduunkhad run --dry-run        # build the full tree + scaffolding (no data)
 buduunkhad run --from 00 --to 01
+buduunkhad results --run-id ID  # curate declared outputs from one sealed run
 buduunkhad phase00 / phase01 / ... --dry-run   # run a single phase
 """
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -116,6 +116,7 @@ def info(config: Path = _CONFIG_OPT) -> None:
     typer.echo(f"Output root:    {cfg.output_root}")
     typer.echo(f"Runs root:      {cfg.runs_root}")
     typer.echo(f"Evidence root:  {cfg.evidence_root}")
+    typer.echo(f"Results root:   {cfg.results_root}")
     typer.echo(f"Register:       {cfg.register_path}  ({len(register)} inputs)")
     typer.echo(f"Buffers (m):    {cfg.boundary.buffers_m}")
     typer.echo(f"Master layers:  {len(cfg.master_gpkg_layers)}")
@@ -222,14 +223,16 @@ def publish_deliverables(
     per-phase selectors for backward compatibility. Raw working copies are always excluded.
     """
     cfg, _register = load_project(config)
-    publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")
-    if not publish_root:
+    from buduunkhad.geospatial_ai.path_safety import PathSafetyError, StorageRoots
+
+    try:
+        publish_root = StorageRoots.from_environment(raw_root=cfg.raw_root).require_publish_root()
+    except PathSafetyError as exc:
         typer.secho(
-            "Set BUDUUNKHAD_PUBLISH_ROOT to a destination folder (e.g. a Google "
-            "Drive-for-Desktop path) before publishing.",
+            str(exc),
             fg="red",
         )
-        raise typer.Exit(2)
+        raise typer.Exit(2) from exc
     from buduunkhad.core.publish import PublishError
     from buduunkhad.core.publish import publish as do_publish
 
@@ -251,7 +254,7 @@ def publish_deliverables(
     try:
         result = do_publish(
             cfg.output_root,
-            Path(publish_root),
+            publish_root,
             label,
             runs_root=cfg.runs_root,
             project_config_path=config,
@@ -266,6 +269,57 @@ def publish_deliverables(
     typer.echo(f"  {result.dest}")
     typer.echo(f"  (skipped {result.skipped_working_copies} raw working-copy file(s) by design)")
     typer.echo("Share that folder in Google Drive to give teammates access.")
+
+
+@app.command("results")
+def curate_results(
+    run_id: str = typer.Option(
+        ...,
+        "--run-id",
+        help="Exact sealed pipeline run to expose in results/latest.",
+    ),
+    review_project: Path | None = typer.Option(
+        None,
+        "--review-project",
+        help="Optional integrated .qgz under the configured work/runs root.",
+    ),
+    review_package: list[Path] | None = typer.Option(
+        None,
+        "--review-package",
+        help="Verified Phase 03 AI review package to include; repeat for multiple packages.",
+    ),
+    config: Path = _CONFIG_OPT,
+) -> None:
+    """Build the small operator-facing results/latest view from declared run outputs."""
+
+    from buduunkhad.core.results_view import ResultsViewError, materialize_results_view
+    from buduunkhad.geospatial_ai.path_safety import StorageRoots
+
+    cfg, _register = load_project(config)
+    roots = StorageRoots.from_environment(raw_root=cfg.raw_root)
+    try:
+        result = materialize_results_view(
+            project_name=cfg.project.name,
+            raw_root=cfg.raw_root,
+            output_root=cfg.output_root,
+            runs_root=cfg.runs_root,
+            results_root=cfg.results_root,
+            run_id=run_id,
+            snapshot_root=roots.snapshot_root,
+            review_project=review_project,
+            review_packages=tuple(review_package or ()),
+        )
+    except ResultsViewError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(2) from exc
+    action = "Created" if result.created else "Verified"
+    typer.secho(f"{action} curated results:", fg="green")
+    typer.echo(f"  {result.root}")
+    typer.echo(
+        f"  {len(result.manifest.phases)} phase(s), "
+        f"{len(result.manifest.files)} declared result file(s)"
+    )
+    typer.echo(f"  Source run: {result.manifest.source_run_id}")
 
 
 @app.command("backup-raw")
@@ -286,17 +340,15 @@ def backup_raw(
     """
     from buduunkhad.core import paths
     from buduunkhad.core.publish import PublishError, backup_raw_archive
+    from buduunkhad.geospatial_ai.path_safety import PathSafetyError, StorageRoots
     from buduunkhad.pipeline import baseline_checksum_path
 
     cfg, _register = load_project(config)
-    publish_root = os.environ.get("BUDUUNKHAD_PUBLISH_ROOT")
-    if not publish_root:
-        typer.secho(
-            "Set BUDUUNKHAD_PUBLISH_ROOT to a destination folder (e.g. a Google "
-            "Drive-for-Desktop path) before backing up.",
-            fg="red",
-        )
-        raise typer.Exit(2)
+    try:
+        publish_root = StorageRoots.from_environment(raw_root=cfg.raw_root).require_publish_root()
+    except PathSafetyError as exc:
+        typer.secho(str(exc), fg="red", err=True)
+        raise typer.Exit(2) from exc
     register_csv = baseline_checksum_path(cfg)
     p00 = paths.phase_dir(cfg.output_root, "00")
     prefix = cfg.register_prefix
@@ -309,7 +361,7 @@ def backup_raw(
         res = backup_raw_archive(
             cfg.raw_root,
             register_csv,
-            Path(publish_root),
+            publish_root,
             label,
             integrity_files=integrity,
             overwrite=overwrite,

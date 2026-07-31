@@ -489,3 +489,40 @@ def phase03_promote_reviewed(
     typer.echo(f"Promoted features: {len(result.promoted_feature_ids)}")
     typer.echo(f"Append-only promotion audit: {result.audit_ledger}")
     typer.echo(f"Accepted-evidence manifest: {evidence_manifest.manifest_id}")
+
+
+@phase03_ai_app.command("build-run-review")
+def phase03_build_run_review(
+    pipeline_run_id: str = typer.Option(..., "--pipeline-run-id"),
+    ai_run_id: str = typer.Option(..., "--ai-run-id"),
+    review_package: list[Path] = typer.Option(
+        ...,
+        "--review-package",
+        exists=True,
+        file_okay=False,
+        help="Repeat for each validated Phase 03 AI review package in the AI run.",
+    ),
+    output: Path = typer.Option(..., "--output", dir_okay=False),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Build one QGIS review view over sealed Phase 01-03 and AI proposal layers."""
+
+    from buduunkhad.geospatial_ai.integrated_review import (
+        build_integrated_phase03_review_project,
+    )
+
+    try:
+        project, roots = _context(config)
+        result = build_integrated_phase03_review_project(
+            runs_root=project.runs_root,
+            pipeline_run_id=pipeline_run_id,
+            ai_run_id=ai_run_id,
+            review_packages=tuple(review_package),
+            output=output,
+            roots=roots,
+            target_epsg=project.target_epsg,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    typer.echo(f"Integrated Phase 03 QGIS review project: {result}")
+    typer.echo("Sealed pipeline results remain read-only; AI review layers remain proposals.")

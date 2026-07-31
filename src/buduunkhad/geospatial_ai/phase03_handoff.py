@@ -40,6 +40,7 @@ from buduunkhad.ai.contracts import (
 )
 from buduunkhad.ai.fingerprint import sha256_bytes, sha256_file, sha256_value
 from buduunkhad.core.qgis_project import (
+    QgzExtent,
     QgzLayer,
     line_symbol,
     point_symbol,
@@ -633,6 +634,29 @@ def load_review_package(review_package: Path, *, roots: StorageRoots) -> ReviewP
     return manifest
 
 
+def verify_review_package(
+    review_package: Path,
+    *,
+    roots: StorageRoots,
+) -> ReviewPackageManifest:
+    """Resolve and revalidate a review package against its authoritative AI ledger."""
+
+    package_directory = roots.assert_run_artifact(review_package)
+    manifest = load_review_package(package_directory, roots=roots)
+    draft = roots.assert_run_artifact(
+        roots.run_directory(manifest.run_id) / manifest.draft_relative_path,
+        run_id=manifest.run_id,
+    )
+    authority = _resolve_authority(draft, roots=roots, run_id=manifest.run_id)
+    _validate_existing_review_package(
+        package_directory,
+        manifest,
+        draft_path=draft,
+        authority=authority,
+    )
+    return manifest
+
+
 def _resolve_authority(draft: Path, *, roots: StorageRoots, run_id: str) -> _Authority:
     run_directory = roots.run_directory(run_id)
     draft_path = roots.assert_run_artifact(draft, run_id=run_id)
@@ -1171,11 +1195,13 @@ def _write_review_project(
                 visible=False,
             )
         )
+    xmin, ymin, xmax, ymax = transformed_source_extent(source).bounds
     write_layered_qgz(
         path,
         epsg=32647,
         title="Buduunkhad Phase 03 AI Draft Review",
         layers=layers,
+        initial_extent=QgzExtent(xmin, ymin, xmax, ymax),
     )
 
 

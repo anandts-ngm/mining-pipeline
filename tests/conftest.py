@@ -150,6 +150,24 @@ def _reassert_network_denial() -> Iterator[None]:
     _install_network_denial()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_external_storage_roots(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Synthetic tests must never inherit paths to a real project workspace."""
+
+    for name in (
+        "BUDUUNKHAD_PROJECT_ROOT",
+        "BUDUUNKHAD_RAW_ROOT",
+        "BUDUUNKHAD_OUTPUT_ROOT",
+        "BUDUUNKHAD_WORK_ROOT",
+        "BUDUUNKHAD_RESULTS_ROOT",
+        "BUDUUNKHAD_SNAPSHOT_ROOT",
+        "BUDUUNKHAD_EVAL_ROOT",
+        "BUDUUNKHAD_PUBLISH_ROOT",
+        "BUDUUNKHAD_WORKFLOW_DOCS_ROOT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 _TEST_BASE_ROOT = Path.home() / ".bkt_tests"
 _SESSION_BASE = _TEST_BASE_ROOT / f"s{os.getpid():x}"
 

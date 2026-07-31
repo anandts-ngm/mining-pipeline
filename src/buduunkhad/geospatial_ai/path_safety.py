@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from buduunkhad.config import PROJECT_ROOT_ENV
+
 WORKFLOW_DOCS_ROOT_ENV = "BUDUUNKHAD_WORKFLOW_DOCS_ROOT"
 SNAPSHOT_ROOT_ENV = "BUDUUNKHAD_SNAPSHOT_ROOT"
 WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
@@ -58,13 +60,22 @@ class StorageRoots(BaseModel):
 
     @classmethod
     def from_environment(cls, *, raw_root: Path) -> StorageRoots:
+        project_root = _environment_path(PROJECT_ROOT_ENV)
         return cls(
             raw_root=raw_root,
             workflow_docs_root=_environment_path(WORKFLOW_DOCS_ROOT_ENV),
-            snapshot_root=_environment_path(SNAPSHOT_ROOT_ENV),
-            work_root=_environment_path(WORK_ROOT_ENV),
-            eval_root=_environment_path(EVAL_ROOT_ENV),
-            publish_root=_environment_path(PUBLISH_ROOT_ENV),
+            snapshot_root=_environment_or_project_path(
+                SNAPSHOT_ROOT_ENV,
+                project_root,
+                "snapshots",
+            ),
+            work_root=_environment_or_project_path(WORK_ROOT_ENV, project_root, "work"),
+            eval_root=_environment_or_project_path(EVAL_ROOT_ENV, project_root, "evaluation"),
+            publish_root=_environment_or_project_path(
+                PUBLISH_ROOT_ENV,
+                project_root,
+                "publish",
+            ),
         )
 
     @property
@@ -82,22 +93,30 @@ class StorageRoots(BaseModel):
 
     def require_snapshot_root(self) -> Path:
         if self.snapshot_root is None:
-            raise PathSafetyError(f"{SNAPSHOT_ROOT_ENV} is required for this operation")
+            raise PathSafetyError(
+                f"{SNAPSHOT_ROOT_ENV} or {PROJECT_ROOT_ENV} is required for this operation"
+            )
         return self.snapshot_root
 
     def require_work_root(self) -> Path:
         if self.work_root is None:
-            raise PathSafetyError(f"{WORK_ROOT_ENV} is required for this operation")
+            raise PathSafetyError(
+                f"{WORK_ROOT_ENV} or {PROJECT_ROOT_ENV} is required for this operation"
+            )
         return self.work_root
 
     def require_eval_root(self) -> Path:
         if self.eval_root is None:
-            raise PathSafetyError(f"{EVAL_ROOT_ENV} is required for evaluation")
+            raise PathSafetyError(
+                f"{EVAL_ROOT_ENV} or {PROJECT_ROOT_ENV} is required for evaluation"
+            )
         return self.eval_root
 
     def require_publish_root(self) -> Path:
         if self.publish_root is None:
-            raise PathSafetyError(f"{PUBLISH_ROOT_ENV} is required for publication output")
+            raise PathSafetyError(
+                f"{PUBLISH_ROOT_ENV} or {PROJECT_ROOT_ENV} is required for publication output"
+            )
         return self.publish_root
 
     def run_directory(self, run_id: str, *, create: bool = False) -> Path:
@@ -165,6 +184,17 @@ class StorageRoots(BaseModel):
 def _environment_path(name: str) -> Path | None:
     value = os.environ.get(name)
     return Path(value) if value else None
+
+
+def _environment_or_project_path(
+    name: str,
+    project_root: Path | None,
+    project_child: str,
+) -> Path | None:
+    explicit = _environment_path(name)
+    if explicit is not None:
+        return explicit
+    return project_root / project_child if project_root is not None else None
 
 
 def _contains(root: Path, candidate: Path) -> bool:

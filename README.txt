@@ -30,11 +30,12 @@ supplied only at execution time.
 
 Command-line entry points
 -------------------------
-    buduunkhad list | info | validate | methodology-status | run | publish | backup-raw
+    buduunkhad list | info | validate | methodology-status | run | results | publish | backup-raw
     buduunkhad ai snapshot-create | snapshot-verify | prepare | approve-egress
                   | execute | ingest-response | process-response | evaluate
                   | inspect-job
-    buduunkhad ai phase03 import-ai-draft | promote-reviewed
+    buduunkhad ai phase03 prepare-source | import-ai-draft | review-overlaps
+                         | build-run-review | promote-reviewed
 
 Where things live
 -----------------
@@ -47,9 +48,16 @@ Where things live
   and verified snapshot identity by the authority and repository-policy contracts.
 - External methodology remains reachable read-only through the
   BUDUUNKHAD_WORKFLOW_DOCS_ROOT environment root for source reconciliation.
-- Raw geological data and production outputs are external to Git. The raw
-  archive is immutable and checksum-verified; outputs are written to a
-  configured local output root and published deliberately.
+- Set BUDUUNKHAD_PROJECT_ROOT once to use the standard local `raw`, `snapshots`,
+  `work`, `current`, `results`, `evaluation`, and `publish` folders. More specific
+  root variables remain available for non-standard deployments.
+- Raw geological data and production outputs are external to Git. The raw archive
+  is immutable and checksum-verified. Complete sealed internals stay under
+  `work/runs`; `current` is a compatibility view; `buduunkhad results --run-id ID`
+  atomically creates the small operator-facing `results/latest` view from declared
+  outputs only. Repeat `--review-package` and supply `--review-project` when the
+  portable view should include verified Phase 03 AI review data. External
+  publication remains a separate deliberate operation.
 
 Implemented phase boundary
 --------------------------
@@ -62,3 +70,5 @@ accepted; dry-run scaffolding does not establish readiness. Phases 05-11 and 99 
 registered stubs (scaffolding and templates only). The optional Phase 03 AI handoff
 promotes explicitly human-reviewed proposals into standalone accepted evidence;
 accepted evidence is support material and is not scientific (geologist) approval.
+The build-run-review command creates one portable QGIS view over sealed Phase 01–03
+outputs and validated AI review packages while preserving those provenance boundaries.
