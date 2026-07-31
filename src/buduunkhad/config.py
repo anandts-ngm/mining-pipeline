@@ -34,6 +34,7 @@ RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
 OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
 WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
 RESULTS_ROOT_ENV = "BUDUUNKHAD_RESULTS_ROOT"
+RESULTS_UPLOAD_ROOT_ENV = "BUDUUNKHAD_RESULTS_UPLOAD_ROOT"
 
 # --------------------------------------------------------------------------- #
 # Register model
@@ -417,6 +418,13 @@ class ProjectConfig(BaseModel):
         if work_root:
             return Path(work_root).expanduser().parent / "results"
         return self.output_root.parent / "results"
+
+    @property
+    def results_upload_root(self) -> Path | None:
+        """Explicit external destination for automatic curated-results upload."""
+
+        value = os.environ.get(RESULTS_UPLOAD_ROOT_ENV)
+        return Path(value).expanduser() if value else None
 
     @property
     def _environment_project_root(self) -> Path | None:

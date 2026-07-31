@@ -11,6 +11,7 @@ from buduunkhad.config import (
     PROJECT_ROOT_ENV,
     RAW_ROOT_ENV,
     RESULTS_ROOT_ENV,
+    RESULTS_UPLOAD_ROOT_ENV,
     WORK_ROOT_ENV,
 )
 from buduunkhad.core.paths import PHASE_DIRS
@@ -143,12 +144,14 @@ def test_specific_roots_override_standard_project_layout(project, monkeypatch):
     monkeypatch.setenv(OUTPUT_ROOT_ENV, str(tmp_path / "specific-current"))
     monkeypatch.setenv(WORK_ROOT_ENV, str(tmp_path / "specific-work"))
     monkeypatch.setenv(RESULTS_ROOT_ENV, str(tmp_path / "specific-results"))
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(tmp_path / "drive-results"))
 
     assert config.raw_root == tmp_path / "specific-raw"
     assert config.output_root == tmp_path / "specific-current"
     assert config.runs_root == tmp_path / "specific-work" / "runs"
     assert config.evidence_root == tmp_path / "specific-work" / "evidence-authority"
     assert config.results_root == tmp_path / "specific-results"
+    assert config.results_upload_root == tmp_path / "drive-results"
 
 
 def test_phase_dirs_cover_workflow():

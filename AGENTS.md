@@ -88,6 +88,11 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   under `work/runs`; `results/latest` is an atomic, hash-recorded operator view containing only
   declared Phase 00–04 outputs from one exact run plus explicitly selected, verified AI review
   packages and an optional rebased integrated QGIS project.
+- Automatic results upload is disabled unless the machine-local
+  `BUDUUNKHAD_RESULTS_UPLOAD_ROOT` is set. When explicitly configured, a real CLI run copies its
+  verified curated view into a content-identified folder at that destination; dry runs, tests,
+  and library calls remain offline, and `--no-upload-results` or `--no-upload` disables the copy
+  for one invocation.
 - Optional OpenAI and Anthropic adapters are lazy, keyless until execution, and require explicit
   non-legacy configuration and egress approval.
 - The Phase 03 handoff promotes explicit human decisions only to standalone `ACCEPTED_EVIDENCE`.

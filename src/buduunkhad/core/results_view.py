@@ -187,6 +187,15 @@ class ResultsViewResult(_StrictModel):
     created: bool
 
 
+def verify_results_view(root: Path) -> ResultsViewManifest:
+    """Revalidate one complete curated-results tree and return its sealed identity."""
+
+    resolved = _resolved_root(root, "curated results view")
+    manifest = _load_results_manifest(resolved / RESULTS_SUMMARY_NAME)
+    _verify_view(resolved, manifest)
+    return manifest
+
+
 @dataclass(frozen=True)
 class _PlannedResult:
     source: Path

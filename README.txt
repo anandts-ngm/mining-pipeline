@@ -56,8 +56,11 @@ Where things live
   `work/runs`; `current` is a compatibility view; `buduunkhad results --run-id ID`
   atomically creates the small operator-facing `results/latest` view from declared
   outputs only. Repeat `--review-package` and supply `--review-project` when the
-  portable view should include verified Phase 03 AI review data. External
-  publication remains a separate deliberate operation.
+  portable view should include verified Phase 03 AI review data. Set the explicit
+  machine-local `BUDUUNKHAD_RESULTS_UPLOAD_ROOT` to a Google Drive for Desktop
+  folder to copy every real run and later AI-integrated results view there
+  automatically. Use `--no-upload-results` or `--no-upload` for a local-only
+  invocation. External publication remains a separate deliberate operation.
 
 Implemented phase boundary
 --------------------------

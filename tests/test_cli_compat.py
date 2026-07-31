@@ -8,7 +8,7 @@ from click import unstyle
 from typer.testing import CliRunner
 
 from buduunkhad.cli import app
-from buduunkhad.config import OUTPUT_ROOT_ENV, RAW_ROOT_ENV
+from buduunkhad.config import OUTPUT_ROOT_ENV, RAW_ROOT_ENV, RESULTS_UPLOAD_ROOT_ENV
 
 runner = CliRunner()
 
@@ -96,6 +96,7 @@ def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     assert "--authorization" in run_help_text
     assert "--authorization" in phase_help_text
     assert "Retired" in run_help_text
+    assert "--upload-results" in run_help_text
 
 
 def test_cli_generic_override_fails_closed_without_creating_run(project) -> None:
@@ -131,3 +132,20 @@ def test_info_honors_existing_environment_path_overrides(project, monkeypatch) -
     assert result.exit_code == 0
     assert str(raw_override) in result.stdout
     assert str(output_override) in result.stdout
+
+
+def test_real_run_automatically_uploads_curated_results(raw_archive, monkeypatch) -> None:
+    _config, _register, raw_root = raw_archive
+    config_path = raw_root.parent.parent / "config" / "project.yaml"
+    upload_root = raw_root.parent.parent / "drive-results"
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(upload_root))
+
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "00"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert "Drive-synced results:" in result.stdout
+    uploaded = list(upload_root.glob("Buduunkhad_Results_*"))
+    assert len(uploaded) == 1

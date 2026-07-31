@@ -18,6 +18,7 @@ from typing import Literal, cast
 import typer
 
 from buduunkhad.ai_cli import ai_app
+from buduunkhad.config import ProjectConfig
 from buduunkhad.core.evidence_manifest import (
     EvidenceAuthorityResolver,
     EvidenceExecutionMode,
@@ -95,6 +96,48 @@ def _echo_manifest(manifest, runs_root: Path) -> None:
     typer.echo(f"Log:      {runs_root / manifest.run_id / 'logs' / 'run.log'}")
 
 
+def _curate_and_upload_results(
+    cfg: ProjectConfig,
+    *,
+    run_id: str,
+    upload: bool,
+    review_project: Path | None = None,
+    review_packages: tuple[Path, ...] = (),
+):
+    from buduunkhad.core.results_upload import upload_results_view
+    from buduunkhad.core.results_view import materialize_results_view
+    from buduunkhad.geospatial_ai.path_safety import StorageRoots
+
+    roots = StorageRoots.from_environment(raw_root=cfg.raw_root)
+    result = materialize_results_view(
+        project_name=cfg.project.name,
+        raw_root=cfg.raw_root,
+        output_root=cfg.output_root,
+        runs_root=cfg.runs_root,
+        results_root=cfg.results_root,
+        run_id=run_id,
+        snapshot_root=roots.snapshot_root,
+        review_project=review_project,
+        review_packages=review_packages,
+    )
+    uploaded = (
+        upload_results_view(
+            result.root,
+            cfg.results_upload_root,
+            protected_roots=(
+                cfg.raw_root,
+                cfg.output_root,
+                cfg.runs_root,
+                cfg.evidence_root,
+                cfg.results_root,
+            ),
+        )
+        if upload and cfg.results_upload_root is not None
+        else None
+    )
+    return result, uploaded
+
+
 @app.command("list")
 def list_phases() -> None:
     """List the registered phases in workflow order."""
@@ -117,6 +160,8 @@ def info(config: Path = _CONFIG_OPT) -> None:
     typer.echo(f"Runs root:      {cfg.runs_root}")
     typer.echo(f"Evidence root:  {cfg.evidence_root}")
     typer.echo(f"Results root:   {cfg.results_root}")
+    if cfg.results_upload_root is not None:
+        typer.echo(f"Upload root:    {cfg.results_upload_root}")
     typer.echo(f"Register:       {cfg.register_path}  ({len(register)} inputs)")
     typer.echo(f"Buffers (m):    {cfg.boundary.buffers_m}")
     typer.echo(f"Master layers:  {len(cfg.master_gpkg_layers)}")
@@ -288,28 +333,28 @@ def curate_results(
         "--review-package",
         help="Verified Phase 03 AI review package to include; repeat for multiple packages.",
     ),
+    upload: bool = typer.Option(
+        True,
+        "--upload/--no-upload",
+        help="Copy the verified view to BUDUUNKHAD_RESULTS_UPLOAD_ROOT when configured.",
+    ),
     config: Path = _CONFIG_OPT,
 ) -> None:
     """Build the small operator-facing results/latest view from declared run outputs."""
 
-    from buduunkhad.core.results_view import ResultsViewError, materialize_results_view
-    from buduunkhad.geospatial_ai.path_safety import StorageRoots
+    from buduunkhad.core.results_upload import ResultsUploadError
+    from buduunkhad.core.results_view import ResultsViewError
 
     cfg, _register = load_project(config)
-    roots = StorageRoots.from_environment(raw_root=cfg.raw_root)
     try:
-        result = materialize_results_view(
-            project_name=cfg.project.name,
-            raw_root=cfg.raw_root,
-            output_root=cfg.output_root,
-            runs_root=cfg.runs_root,
-            results_root=cfg.results_root,
+        result, uploaded = _curate_and_upload_results(
+            cfg,
             run_id=run_id,
-            snapshot_root=roots.snapshot_root,
+            upload=upload,
             review_project=review_project,
             review_packages=tuple(review_package or ()),
         )
-    except ResultsViewError as exc:
+    except (ResultsUploadError, ResultsViewError) as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(2) from exc
     action = "Created" if result.created else "Verified"
@@ -320,6 +365,10 @@ def curate_results(
         f"{len(result.manifest.files)} declared result file(s)"
     )
     typer.echo(f"  Source run: {result.manifest.source_run_id}")
+    if uploaded is not None:
+        upload_action = "Copied" if uploaded.created else "Verified"
+        typer.secho(f"{upload_action} Drive-synced results:", fg="green")
+        typer.echo(f"  {uploaded.destination}")
 
 
 @app.command("backup-raw")
@@ -442,6 +491,11 @@ def run(
         "--authorization",
         help="Load one immutable scoped execution-authorization JSON file (repeatable).",
     ),
+    upload_results: bool = typer.Option(
+        True,
+        "--upload-results/--no-upload-results",
+        help="After a real run, curate and upload outputs when an upload root is configured.",
+    ),
 ) -> None:
     """Run the pipeline over the selected phases."""
     cfg, register = load_project(config)
@@ -468,6 +522,23 @@ def run(
         typer.secho(str(exc), fg="red")
         raise typer.Exit(2) from exc
     _echo_manifest(manifest, cfg.runs_root)
+    if not manifest.dry_run and cfg.results_upload_root is not None:
+        from buduunkhad.core.results_upload import ResultsUploadError
+        from buduunkhad.core.results_view import ResultsViewError
+
+        try:
+            results, uploaded = _curate_and_upload_results(
+                cfg,
+                run_id=manifest.run_id,
+                upload=upload_results,
+            )
+        except (ResultsUploadError, ResultsViewError) as exc:
+            typer.secho(f"Pipeline succeeded, but automatic results upload failed: {exc}", fg="red")
+            raise typer.Exit(2) from exc
+        typer.echo(f"Curated results: {results.root}")
+        if uploaded is not None:
+            upload_action = "Copied" if uploaded.created else "Verified"
+            typer.echo(f"{upload_action} Drive-synced results: {uploaded.destination}")
 
 
 def _make_phase_command(phase_id: str, phase_name: str):
