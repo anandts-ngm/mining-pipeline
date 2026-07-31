@@ -33,13 +33,24 @@ class ResultsUploadResult:
     created: bool
 
 
+RESULTS_UPLOAD_DIRECTORY_NAME = "Buduunkhad"
+_WINDOWS_RESERVED_NAMES = {
+    "aux",
+    "con",
+    "nul",
+    "prn",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+
+
 def upload_results_view(
     results_view: Path,
     upload_root: Path,
     *,
     protected_roots: tuple[Path, ...] = (),
 ) -> ResultsUploadResult:
-    """Copy one exact curated view into a versioned external destination."""
+    """Atomically install one exact curated view as the external current result."""
 
     source = _existing_root(results_view, "curated results view")
     destination_candidate = _comparison_root(upload_root, "results upload root")
@@ -47,27 +58,27 @@ def upload_results_view(
     for protected in protected_roots:
         protected_root = _comparison_root(protected, "protected root")
         _reject_overlap(protected_root, destination_candidate)
+    manifest = _verified_source_manifest(source)
+    directory_name = _project_directory_name(manifest.project_name)
     destination_root = _external_root(destination_candidate)
-    try:
-        manifest = verify_results_view(source)
-    except ResultsViewError as exc:
-        raise ResultsUploadError(str(exc)) from exc
-    name = f"Buduunkhad_Results_{manifest.source_run_id}_{manifest.view_id[:12]}"
-    destination = destination_root / name
+    destination = destination_root / directory_name
     if destination.exists():
         try:
-            _verify_uploaded(destination, manifest)
+            existing = _load_uploaded_manifest(destination)
+            _verify_uploaded(destination, existing)
         except (OSError, ResultsViewError, ValueError) as exc:
             raise ResultsUploadError(str(exc)) from exc
-        return ResultsUploadResult(
-            destination=destination,
-            manifest=manifest,
-            created=False,
-        )
+        if existing == manifest:
+            return ResultsUploadResult(
+                destination=destination,
+                manifest=manifest,
+                created=False,
+            )
 
     # Keep the temporary component short because Windows still applies MAX_PATH to
     # some copy operations even when the final Drive folder is within the limit.
     staging = destination_root / f".u-{uuid.uuid4().hex[:8]}"
+    backup = destination_root / f".b-{uuid.uuid4().hex[:8]}"
     staging.mkdir()
     try:
         for record in manifest.files:
@@ -88,8 +99,19 @@ def upload_results_view(
         )
         shutil.copy2(summary_source, staging / RESULTS_SUMMARY_NAME)
         _verify_uploaded(staging, manifest)
-        os.replace(staging, destination)
-        _verify_uploaded(destination, manifest)
+        if destination.exists():
+            os.replace(destination, backup)
+        try:
+            os.replace(staging, destination)
+            _verify_uploaded(destination, manifest)
+        except Exception:
+            if destination.exists():
+                shutil.rmtree(destination)
+            if backup.exists():
+                os.replace(backup, destination)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
         return ResultsUploadResult(
             destination=destination,
             manifest=manifest,
@@ -102,16 +124,35 @@ def upload_results_view(
             shutil.rmtree(staging)
 
 
-def _verify_uploaded(root: Path, expected_manifest: ResultsViewManifest) -> None:
+def _load_uploaded_manifest(root: Path) -> ResultsViewManifest:
     summary = require_regular_file_under(
         root,
         root / RESULTS_SUMMARY_NAME,
         description="uploaded results summary",
     )
     try:
-        manifest = ResultsViewManifest.model_validate_json(summary.read_text(encoding="utf-8"))
+        return ResultsViewManifest.model_validate_json(summary.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, ValueError) as exc:
         raise ResultsUploadError("uploaded results summary is invalid") from exc
+
+
+def _verified_source_manifest(root: Path) -> ResultsViewManifest:
+    try:
+        return verify_results_view(root)
+    except ResultsViewError as curated_error:
+        try:
+            manifest = _load_uploaded_manifest(root)
+            _verify_uploaded(root, manifest)
+        except (ArtifactSealError, OSError, ResultsUploadError, ValueError) as exc:
+            raise ResultsUploadError(
+                "results source is neither a valid curated view nor a verified mirror "
+                f"(curated={curated_error}; mirror={exc})"
+            ) from exc
+        return manifest
+
+
+def _verify_uploaded(root: Path, expected_manifest: ResultsViewManifest) -> None:
+    manifest = _load_uploaded_manifest(root)
     if manifest != expected_manifest:
         raise ResultsUploadError("uploaded results identity differs from the curated source")
     expected = {record.path for record in manifest.files} | {RESULTS_SUMMARY_NAME}
@@ -175,3 +216,18 @@ def _reject_overlap(source: Path, destination: Path) -> None:
         raise ResultsUploadError(
             f"curated results and upload roots must not overlap: {source} ; {destination}"
         )
+
+
+def _project_directory_name(project_name: str) -> str:
+    """Return one safe, human-readable directory component bound to the view manifest."""
+
+    name = project_name.strip()
+    if not name or name in {".", ".."} or name != project_name:
+        raise ResultsUploadError("results project name is not a safe directory name")
+    if len(name) > 100 or name[-1] in {" ", "."}:
+        raise ResultsUploadError("results project name is not a safe directory name")
+    if any(ord(character) < 32 or character in '<>:"/\\|?*' for character in name):
+        raise ResultsUploadError("results project name is not a safe directory name")
+    if name.partition(".")[0].casefold() in _WINDOWS_RESERVED_NAMES:
+        raise ResultsUploadError("results project name is reserved by Windows")
+    return name

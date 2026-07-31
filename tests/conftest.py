@@ -160,11 +160,15 @@ def _isolate_external_storage_roots(monkeypatch: pytest.MonkeyPatch) -> None:
         "BUDUUNKHAD_OUTPUT_ROOT",
         "BUDUUNKHAD_WORK_ROOT",
         "BUDUUNKHAD_RESULTS_ROOT",
+        "BUDUUNKHAD_RESULTS_MIRROR_ROOT",
         "BUDUUNKHAD_RESULTS_UPLOAD_ROOT",
         "BUDUUNKHAD_SNAPSHOT_ROOT",
         "BUDUUNKHAD_EVAL_ROOT",
         "BUDUUNKHAD_PUBLISH_ROOT",
         "BUDUUNKHAD_WORKFLOW_DOCS_ROOT",
+        "MINING_PIPELINE_WORK_ROOT",
+        "MINING_PIPELINE_OUTPUTS_ROOT",
+        "MINING_PIPELINE_DRIVE_ROOT",
     ):
         monkeypatch.delenv(name, raising=False)
 

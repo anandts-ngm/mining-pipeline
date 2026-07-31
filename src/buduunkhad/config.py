@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
@@ -29,12 +30,19 @@ from pydantic import (
 
 #: One per-machine project root can define the standard local storage layout.
 PROJECT_ROOT_ENV = "BUDUUNKHAD_PROJECT_ROOT"
+#: Generic bases namespace future exploration areas by their validated project slug.
+PIPELINE_WORK_ROOT_ENV = "MINING_PIPELINE_WORK_ROOT"
+PIPELINE_OUTPUTS_ROOT_ENV = "MINING_PIPELINE_OUTPUTS_ROOT"
+PIPELINE_DRIVE_ROOT_ENV = "MINING_PIPELINE_DRIVE_ROOT"
 #: Specific overrides remain available for non-standard deployments.
 RAW_ROOT_ENV = "BUDUUNKHAD_RAW_ROOT"
 OUTPUT_ROOT_ENV = "BUDUUNKHAD_OUTPUT_ROOT"
 WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
 RESULTS_ROOT_ENV = "BUDUUNKHAD_RESULTS_ROOT"
+RESULTS_MIRROR_ROOT_ENV = "BUDUUNKHAD_RESULTS_MIRROR_ROOT"
 RESULTS_UPLOAD_ROOT_ENV = "BUDUUNKHAD_RESULTS_UPLOAD_ROOT"
+
+_PROJECT_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
 # --------------------------------------------------------------------------- #
 # Register model
@@ -73,6 +81,28 @@ class ProjectMeta(BaseModel):
     project_code: str
     license_code: str
     data_prefix_code: str
+    slug: str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def _valid_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not _PROJECT_SLUG.fullmatch(normalized):
+            raise ValueError(
+                "project slug must use 1-64 lowercase ASCII letters, digits, or internal hyphens"
+            )
+        return normalized
+
+    @property
+    def storage_slug(self) -> str:
+        if self.slug is not None:
+            return self.slug
+        derived = re.sub(r"[^a-z0-9]+", "-", self.name.strip().lower()).strip("-")
+        if not _PROJECT_SLUG.fullmatch(derived):
+            raise ValueError("project name cannot form a safe storage slug; configure project.slug")
+        return derived
 
 
 class CRSConfig(BaseModel):
@@ -356,6 +386,9 @@ class ProjectConfig(BaseModel):
     ) -> dict[str, object]:
         """Keep the pre-AI serialized shape unless callers opt into ``ai-v1``."""
         data = handler(self)
+        project = data.get("project")
+        if isinstance(project, dict):
+            project.pop("slug", None)
         context = info.context or {}
         version = context.get("config_serialization_version", "legacy")
         if version == "legacy":
@@ -420,16 +453,32 @@ class ProjectConfig(BaseModel):
         return self.output_root.parent / "results"
 
     @property
-    def results_upload_root(self) -> Path | None:
-        """Explicit external destination for automatic curated-results upload."""
+    def results_mirror_root(self) -> Path | None:
+        """Optional local base containing one verified directory per exploration area."""
 
-        value = os.environ.get(RESULTS_UPLOAD_ROOT_ENV)
+        value = os.environ.get(RESULTS_MIRROR_ROOT_ENV) or os.environ.get(PIPELINE_OUTPUTS_ROOT_ENV)
         return Path(value).expanduser() if value else None
 
     @property
-    def _environment_project_root(self) -> Path | None:
-        value = os.environ.get(PROJECT_ROOT_ENV)
+    def results_upload_root(self) -> Path | None:
+        """Explicit external destination for automatic curated-results upload."""
+
+        value = os.environ.get(RESULTS_UPLOAD_ROOT_ENV) or os.environ.get(PIPELINE_DRIVE_ROOT_ENV)
         return Path(value).expanduser() if value else None
+
+    @property
+    def project_root(self) -> Path | None:
+        """Resolve the project-specific workspace selected by legacy or generic settings."""
+
+        value = os.environ.get(PROJECT_ROOT_ENV)
+        if value:
+            return Path(value).expanduser()
+        base = os.environ.get(PIPELINE_WORK_ROOT_ENV)
+        return Path(base).expanduser() / self.project.storage_slug if base else None
+
+    @property
+    def _environment_project_root(self) -> Path | None:
+        return self.project_root
 
     @property
     def register_path(self) -> Path:

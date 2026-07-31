@@ -9,12 +9,17 @@ Make the 79 inputs GIS-ready and stand up the EPSG:32647 master database:
 5. Write the CRS/Georeference QA/QC log and the Data Confidence Ranking.
 6. Write the layered EPSG:32647 Master QGIS project (.qgz): boundary + buffers on
    top of every master-schema layer, with relative datasources.
-7. Emit the Phase 1 handoff placeholders required by the methodology.
+7. Emit the Phase 1 index map and run-derived handoff summary required by the methodology.
 """
 
 from __future__ import annotations
 
+import math
+from collections.abc import Callable, Iterator
 from pathlib import Path
+
+from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
+from shapely.geometry.base import BaseGeometry
 
 from buduunkhad.config import InputRecord
 from buduunkhad.core import boundary_validation, naming, qgis_project, registers, vector_io
@@ -96,6 +101,7 @@ class Phase01DataAudit(Phase):
         if ctx.dry_run:
             registers.write_table_xlsx([], _CRS_LOG_COLUMNS, crs_log, sheet_title="CRS Georef QAQC")
             registers.write_confidence_ranking_xlsx([], conf_path)
+            n_qgz_layers = self._write_master_project(ctx, qgz_path, master_path)
             self._write_handoff_outputs(
                 ctx,
                 inventory_path=inventory_path,
@@ -103,8 +109,8 @@ class Phase01DataAudit(Phase):
                 index_map_path=index_map_path,
                 summary_path=summary_path,
                 phase2_ready_path=phase2_ready_path,
+                qgis_layer_count=n_qgz_layers,
             )
-            self._write_master_project(ctx, qgz_path, master_path)
             result.add_output(qgz_path)
             result.add_output(crs_log)
             result.add_output(conf_path)
@@ -137,6 +143,10 @@ class Phase01DataAudit(Phase):
         registers.write_confidence_ranking_xlsx(self._confidence_rows(ctx), conf_path)
         result.add_output(conf_path)
 
+        # The handoff summary reports the actual portable project layer count, so write
+        # the QGIS project before the summary rather than predicting its contents.
+        n_qgz_layers = self._write_master_project(ctx, qgz_path, master_path)
+
         self._write_handoff_outputs(
             ctx,
             inventory_path=inventory_path,
@@ -144,12 +154,12 @@ class Phase01DataAudit(Phase):
             index_map_path=index_map_path,
             summary_path=summary_path,
             phase2_ready_path=phase2_ready_path,
+            qgis_layer_count=n_qgz_layers,
         )
         for path in self._handoff_paths:
             result.add_output(path)
 
         # ---- 6. layered master QGIS project (boundary/buffers on top of the schema) ----
-        n_qgz_layers = self._write_master_project(ctx, qgz_path, master_path)
         result.add_output(qgz_path)
 
         result.log(
@@ -457,11 +467,13 @@ class Phase01DataAudit(Phase):
         index_map_path: Path,
         summary_path: Path,
         phase2_ready_path: Path,
+        qgis_layer_count: int,
     ) -> None:
-        """Write methodology-required Phase 1 handoff artifacts without raw processing."""
+        """Write the methodology-required Phase 1 inventory and handoff artifacts."""
+        gap_rows = self._data_gap_rows(ctx)
         registers.write_inventory_xlsx(self._phase1_inventory_rows(ctx), inventory_path)
         registers.write_table_xlsx(
-            self._data_gap_rows(ctx),
+            gap_rows,
             _DATA_GAP_COLUMNS,
             gap_path,
             sheet_title="Data Gaps",
@@ -474,8 +486,23 @@ class Phase01DataAudit(Phase):
             sheet_title="Phase 2 Ready",
             widths=[5, 28, 44, 12, 40, 18, 18, 44],
         )
-        _write_index_map_placeholder(index_map_path, ctx)
-        _write_desktop_summary(summary_path, ctx, data_gaps=len(self._data_gap_rows(ctx)))
+        _write_index_map(
+            index_map_path,
+            ctx,
+            boundary_path=self._boundary_path,
+            buffer_path=self._buffer_path,
+        )
+        _write_desktop_summary(
+            summary_path,
+            ctx,
+            data_gaps=len(gap_rows),
+            working_copies=sum(self._working_copy_path(ctx, rec).is_file() for rec in ctx.register),
+            raster_audits=len(self._raster_audits),
+            master_layers=len(self._master_layers),
+            qgis_layers=qgis_layer_count,
+            boundary_ready=self._boundary_ok,
+            buffer_count=self._n_buffers,
+        )
         self._handoff_paths = [
             inventory_path,
             gap_path,
@@ -634,8 +661,9 @@ class Phase01DataAudit(Phase):
                 RECORDED_ACCEPTANCE,
                 decision=Decision.PASS if len(self._handoff_paths) == 5 else Decision.FAIL,
                 note=(
-                    f"{len(self._handoff_paths)} handoff scaffold artifact(s) written; "
-                    "the index map remains an explicit placeholder pending real map rendering."
+                    f"{len(self._handoff_paths)} dry-run handoff artifact(s) written; "
+                    "the index-map layout is explicitly marked as dry-run and contains no "
+                    "source geometry."
                 ),
             )
             return report
@@ -706,8 +734,8 @@ class Phase01DataAudit(Phase):
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if len(self._handoff_paths) == 5 else Decision.FAIL,
             note=(
-                f"{len(self._handoff_paths)} handoff scaffold artifact(s) written; "
-                "the index map remains an explicit placeholder pending real map rendering."
+                f"{len(self._handoff_paths)} handoff artifact(s) written; the index map was "
+                f"rendered from the exact Phase 01 boundary and {self._n_buffers} project buffers."
             ),
         )
         return report
@@ -839,12 +867,25 @@ def _gap_row(
     }
 
 
-def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Path:
+def _write_desktop_summary(
+    path: Path,
+    ctx: RunContext,
+    *,
+    data_gaps: int,
+    working_copies: int,
+    raster_audits: int,
+    master_layers: int,
+    qgis_layers: int,
+    boundary_ready: bool,
+    buffer_count: int,
+) -> Path:
     from docx import Document
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     doc = Document()
+    doc.core_properties.title = "Buduunkhad Phase 1 Desktop Study Summary"
+    doc.core_properties.subject = "Run-derived Phase 1 deterministic setup and limitations"
     doc.add_heading("Buduunkhad Phase 1 Desktop Study Summary", level=1)
     doc.add_paragraph(f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}")
     doc.add_paragraph(f"License: {ctx.config.project.license_code}")
@@ -852,23 +893,59 @@ def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Pa
         f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}"
     )
     doc.add_paragraph(f"Run ID: {ctx.run_id}")
-    doc.add_paragraph("This readiness summary is generated from the configured 79-input register.")
-    doc.add_paragraph("It does not interpret ore potential or process real raw data.")
+    if ctx.dry_run:
+        doc.add_paragraph(
+            "Dry-run planning summary: no raw or Phase 00 working-copy bytes were opened."
+        )
+    else:
+        doc.add_paragraph(
+            "This summary reports deterministic measurements from the exact Phase 00 working "
+            "copies used by this run. It does not make a geological or mineralization decision."
+        )
 
-    doc.add_heading("Phase 1 Handoff Scaffold Status", level=2)
-    checks = [
-        "Master GIS database schema created.",
-        "Master QGIS project placeholder created with EPSG:32647 project CRS.",
-        "CRS/georeference QA/QC log created.",
-        "Data confidence ranking created.",
-        f"Data gap register created with {data_gaps} open item(s).",
-        "Phase 2-ready dataset list created for remote-sensing inputs.",
+    doc.add_heading("Measured Phase 1 Status", level=2)
+    status_rows = [
+        ("Execution", "Dry run" if ctx.dry_run else "Real run"),
+        ("Registered inputs", str(len(ctx.register))),
+        ("Working copies available", f"{working_copies}/{len(ctx.register)}"),
+        ("Rasters audited", str(raster_audits)),
+        (
+            "Licence boundary",
+            "Deterministically validated; qualified acceptance remains separate"
+            if boundary_ready
+            else ("Not opened in dry run" if ctx.dry_run else "Unavailable or invalid"),
+        ),
+        ("Project buffers produced", str(buffer_count)),
+        ("Master GeoPackage layers", str(master_layers)),
+        ("Portable QGIS project layers", str(qgis_layers)),
+        ("Open data-gap records", str(data_gaps)),
     ]
+    table = doc.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+    table.rows[0].cells[0].text = "Measurement"
+    table.rows[0].cells[1].text = "Result"
+    for label, value in status_rows:
+        cells = table.add_row().cells
+        cells[0].text = label
+        cells[1].text = value
+
+    doc.add_heading("Produced Handoff", level=2)
+    checks = (
+        "Master GIS database created with the adopted 13-layer schema; only exact available "
+        "evidence is populated.",
+        "Portable Master QGIS project created with relative data sources.",
+        "Index map rendered from the exact licence boundary and configured project buffers."
+        if boundary_ready
+        else "Dry-run index-map layout created without source geometry.",
+        "CRS/georeference QA/QC, data confidence and data-gap registers created.",
+        "Phase 2-ready dataset list created from the registered remote-sensing inputs.",
+    )
     for check in checks:
         doc.add_paragraph(check, style="List Bullet")
 
     doc.add_heading("Limitations", level=2)
     for note in [
+        "An empty Master GeoPackage layer is a reserved schema, not evidence that a feature is absent.",
         "Scanned maps require operator georeference review, GCP residual logging and confidence flags.",
         "Remote sensing, DEM, drone/LiDAR and pXRF products are support evidence only.",
         "Final target confidence requires field geology, sampling, laboratory assay and structural control.",
@@ -878,39 +955,331 @@ def _write_desktop_summary(path: Path, ctx: RunContext, *, data_gaps: int) -> Pa
     return path
 
 
-def _write_index_map_placeholder(path: Path, ctx: RunContext) -> Path:
-    lines = [
-        "Phase 1 Master GIS Index Map Placeholder",
-        f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}",
-        f"License: {ctx.config.project.license_code}",
-        f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}",
-        "Map production requires QGIS rendering after real raw data sync.",
-        "This placeholder records that final index-map rendering remains incomplete.",
+def _write_index_map(
+    path: Path,
+    ctx: RunContext,
+    *,
+    boundary_path: Path | None,
+    buffer_path: Path | None,
+) -> Path:
+    if ctx.dry_run:
+        return _write_simple_pdf(
+            path,
+            [
+                "Phase 1 Master GIS Index Map - Dry Run",
+                f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}",
+                f"License: {ctx.config.project.license_code}",
+                f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}",
+                "No source geometry was opened; this file verifies the planned output path only.",
+            ],
+        )
+    if boundary_path is None or buffer_path is None:
+        raise ValueError("a real Phase 1 index map requires the boundary and buffer derivatives")
+
+    boundary = vector_io.read_layer(boundary_path, "license_boundary")
+    buffers = vector_io.read_layer(buffer_path, "project_buffers")
+    if boundary.empty or buffers.empty or boundary.crs is None or buffers.crs is None:
+        raise ValueError("Phase 1 index-map geometry is empty or lacks a CRS")
+    if (
+        boundary.crs.to_epsg() != ctx.config.target_epsg
+        or buffers.crs.to_epsg() != ctx.config.target_epsg
+    ):
+        raise ValueError("Phase 1 index-map geometry is not in the configured target CRS")
+
+    page_width, page_height = 842.0, 595.0
+    map_left, map_bottom, map_width, map_height = 48.0, 70.0, 590.0, 455.0
+    xmin, ymin, xmax, ymax = (float(value) for value in buffers.total_bounds)
+    span_x = xmax - xmin
+    span_y = ymax - ymin
+    if (
+        not all(math.isfinite(value) for value in (xmin, ymin, xmax, ymax))
+        or min(span_x, span_y) <= 0
+    ):
+        raise ValueError("Phase 1 index-map extent is invalid")
+    padding = max(span_x, span_y) * 0.025
+    xmin -= padding
+    ymin -= padding
+    xmax += padding
+    ymax += padding
+    span_x = xmax - xmin
+    span_y = ymax - ymin
+    scale = min(map_width / span_x, map_height / span_y)
+    draw_width = span_x * scale
+    draw_height = span_y * scale
+    draw_left = map_left + (map_width - draw_width) / 2
+    draw_bottom = map_bottom + (map_height - draw_height) / 2
+
+    def transform(x: float, y: float) -> tuple[float, float]:
+        return draw_left + (x - xmin) * scale, draw_bottom + (y - ymin) * scale
+
+    content = [
+        "1 1 1 rg",
+        f"0 0 {page_width:.2f} {page_height:.2f} re f",
+        "1 J 1 j",
+        "0.97 0.97 0.97 rg",
+        f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re f",
+        "q",
+        f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re W n",
     ]
-    return _write_simple_pdf(path, lines)
+    grid_interval = _nice_distance(max(span_x, span_y) / 6)
+    content.extend(
+        _grid_commands(
+            xmin=xmin,
+            ymin=ymin,
+            xmax=xmax,
+            ymax=ymax,
+            interval=grid_interval,
+            transform=transform,
+        )
+    )
+    content.extend(["0.45 0.45 0.45 RG", "0.7 w", "[4 3] 0 d"])
+    for geometry in buffers.geometry:
+        content.extend(_geometry_path_commands(geometry, transform))
+    content.append("S")
+    content.extend(["[] 0 d", "0.96 0.83 0.83 rg", "0.75 0.05 0.05 RG", "1.6 w"])
+    for geometry in boundary.geometry:
+        content.extend(_geometry_path_commands(geometry, transform))
+    content.extend(["B*", "Q", "0 0 0 RG", "0 0 0 rg", "0.8 w"])
+    content.append(f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re S")
+
+    content.extend(
+        _coordinate_label_commands(
+            xmin=xmin,
+            ymin=ymin,
+            xmax=xmax,
+            ymax=ymax,
+            interval=grid_interval,
+            transform=transform,
+            map_left=map_left,
+            map_bottom=map_bottom,
+            map_width=map_width,
+            map_height=map_height,
+        )
+    )
+    content.extend(_scale_bar_commands(map_left + 20, map_bottom + 18, span_x, scale))
+    content.extend(_north_arrow_commands(785, 485))
+    boundary_source = ctx.record_by_no(ctx.config.boundary.input_no).filename
+    source_lines = _wrap_map_label(boundary_source, width=29)
+
+    content.extend(
+        [
+            _pdf_text(48, 560, "Phase 1 Master GIS Index Map", 18),
+            _pdf_text(
+                48,
+                542,
+                f"{ctx.config.project.project_code} / {ctx.config.project.name} - "
+                f"{ctx.config.project.license_code}",
+                10,
+            ),
+            _pdf_text(664, 440, "Legend", 12),
+            "0.75 0.05 0.05 RG 1.6 w 664 420 m 704 420 l S",
+            _pdf_text(712, 416, "Licence boundary", 9),
+            "0.45 0.45 0.45 RG 0.7 w [4 3] 0 d 664 400 m 704 400 l S [] 0 d",
+            _pdf_text(712, 396, "Project buffers", 9),
+            _pdf_text(664, 370, "Buffers", 10),
+            _pdf_text(
+                664,
+                354,
+                ", ".join(_format_distance(value) for value in ctx.config.boundary.buffers_m),
+                8,
+            ),
+            _pdf_text(664, 324, "Coordinate reference", 10),
+            _pdf_text(664, 308, ctx.config.crs.target_authority, 9),
+            _pdf_text(664, 292, ctx.config.crs.target_name, 8),
+            _pdf_text(664, 252, "Source", 10),
+            _pdf_text(664, 236, f"Input #{ctx.config.boundary.input_no}", 8),
+            *[
+                _pdf_text(664, 223 - index * 10, line, 6)
+                for index, line in enumerate(source_lines[:3])
+            ],
+            _pdf_text(664, 198, "Run identity", 10),
+            _pdf_text(664, 182, ctx.run_id, 7),
+            _pdf_text(
+                48,
+                30,
+                "Deterministic project index - administrative context only; not geological evidence.",
+                8,
+            ),
+        ]
+    )
+    return _write_pdf_stream(
+        path,
+        "\n".join(content).encode("ascii", errors="replace"),
+        page_width=page_width,
+        page_height=page_height,
+    )
+
+
+def _geometry_path_commands(
+    geometry: BaseGeometry,
+    transform: Callable[[float, float], tuple[float, float]],
+) -> list[str]:
+    commands: list[str] = []
+    for polygon in _iter_polygons(geometry):
+        for ring in (polygon.exterior, *polygon.interiors):
+            coordinates = list(ring.coords)
+            if not coordinates:
+                continue
+            x, y = transform(float(coordinates[0][0]), float(coordinates[0][1]))
+            commands.append(f"{x:.2f} {y:.2f} m")
+            for coordinate in coordinates[1:]:
+                x, y = transform(float(coordinate[0]), float(coordinate[1]))
+                commands.append(f"{x:.2f} {y:.2f} l")
+            commands.append("h")
+    return commands
+
+
+def _iter_polygons(geometry: BaseGeometry) -> Iterator[Polygon]:
+    if isinstance(geometry, Polygon):
+        yield geometry
+    elif isinstance(geometry, (MultiPolygon, GeometryCollection)):
+        for part in geometry.geoms:
+            yield from _iter_polygons(part)
+
+
+def _nice_distance(value: float) -> float:
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("map grid distance must be positive")
+    exponent = math.floor(math.log10(value))
+    fraction = value / (10**exponent)
+    if fraction < 1.5:
+        nice = 1.0
+    elif fraction < 3.5:
+        nice = 2.0
+    elif fraction < 7.5:
+        nice = 5.0
+    else:
+        nice = 10.0
+    return nice * (10**exponent)
+
+
+def _grid_values(minimum: float, maximum: float, interval: float) -> Iterator[float]:
+    current = math.ceil(minimum / interval) * interval
+    while current <= maximum:
+        yield current
+        current += interval
+
+
+def _grid_commands(
+    *,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    interval: float,
+    transform: Callable[[float, float], tuple[float, float]],
+) -> list[str]:
+    commands = ["0.84 0.84 0.84 RG", "0.35 w"]
+    for value in _grid_values(xmin, xmax, interval):
+        x1, y1 = transform(value, ymin)
+        x2, y2 = transform(value, ymax)
+        commands.append(f"{x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
+    for value in _grid_values(ymin, ymax, interval):
+        x1, y1 = transform(xmin, value)
+        x2, y2 = transform(xmax, value)
+        commands.append(f"{x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
+    return commands
+
+
+def _coordinate_label_commands(
+    *,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    interval: float,
+    transform: Callable[[float, float], tuple[float, float]],
+    map_left: float,
+    map_bottom: float,
+    map_width: float,
+    map_height: float,
+) -> list[str]:
+    commands: list[str] = []
+    for value in _grid_values(xmin, xmax, interval):
+        x, _ = transform(value, ymin)
+        if map_left <= x <= map_left + map_width:
+            commands.append(_pdf_text(x - 14, map_bottom - 12, f"{value:.0f} E", 6))
+    for value in _grid_values(ymin, ymax, interval):
+        _, y = transform(xmin, value)
+        if map_bottom <= y <= map_bottom + map_height:
+            commands.append(_pdf_text(map_left + 3, y + 2, f"{value:.0f} N", 6))
+    return commands
+
+
+def _scale_bar_commands(x: float, y: float, map_span_metres: float, scale: float) -> list[str]:
+    distance = _nice_distance(map_span_metres / 5)
+    width = distance * scale
+    segment_width = width / 4
+    commands = ["0 0 0 RG", "0.5 w"]
+    for index in range(4):
+        fill = "0 0 0 rg" if index % 2 == 0 else "1 1 1 rg"
+        commands.append(
+            f"{fill} {x + index * segment_width:.2f} {y:.2f} {segment_width:.2f} 7 re B"
+        )
+    commands.append(_pdf_text(x, y - 10, "0", 6))
+    commands.append(_pdf_text(x + width - 10, y - 10, _format_distance(distance), 6))
+    return commands
+
+
+def _north_arrow_commands(x: float, y: float) -> list[str]:
+    return [
+        _pdf_text(x - 4, y + 34, "N", 12),
+        "0 0 0 rg 0 0 0 RG",
+        f"{x:.2f} {y + 28:.2f} m {x - 7:.2f} {y:.2f} l {x:.2f} {y + 7:.2f} l "
+        f"{x + 7:.2f} {y:.2f} l h f",
+    ]
+
+
+def _format_distance(distance_metres: float) -> str:
+    if distance_metres >= 1000:
+        value = distance_metres / 1000
+        return f"{value:g} km"
+    return f"{distance_metres:g} m"
+
+
+def _wrap_map_label(text: str, *, width: int) -> list[str]:
+    if width < 1:
+        raise ValueError("map label width must be positive")
+    return [text[index : index + width] for index in range(0, len(text), width)] or [""]
+
+
+def _pdf_text(x: float, y: float, text: str, size: float) -> str:
+    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    return f"BT /F1 {size:g} Tf {x:.2f} {y:.2f} Td ({escaped}) Tj ET"
 
 
 def _write_simple_pdf(path: Path, lines: list[str]) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    def esc(text: str) -> str:
-        return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
     text_lines = ["BT", "/F1 12 Tf", "72 760 Td"]
     for i, line in enumerate(lines):
         if i:
             text_lines.append("0 -20 Td")
-        text_lines.append(f"({esc(line)}) Tj")
+        escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        text_lines.append(f"({escaped}) Tj")
     text_lines.append("ET")
-    stream = "\n".join(text_lines).encode("ascii", errors="replace")
+    return _write_pdf_stream(
+        path,
+        "\n".join(text_lines).encode("ascii", errors="replace"),
+        page_width=612,
+        page_height=792,
+    )
+
+
+def _write_pdf_stream(
+    path: Path,
+    stream: bytes,
+    *,
+    page_width: float,
+    page_height: float,
+) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         (
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:g} {page_height:g}] ".encode()
+            + b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         b"<< /Length "

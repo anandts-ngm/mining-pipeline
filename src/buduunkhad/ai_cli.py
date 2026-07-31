@@ -31,7 +31,10 @@ def _context(config_path: Path, ai_config_path: Path | None = None):
     from buduunkhad.geospatial_ai.path_safety import StorageRoots
 
     config = load_config(config_path, ai_config_path=ai_config_path)
-    return config, StorageRoots.from_environment(raw_root=config.raw_root)
+    return config, StorageRoots.from_environment(
+        raw_root=config.raw_root,
+        project_root=config.project_root,
+    )
 
 
 def _abort(exc: Exception) -> None:

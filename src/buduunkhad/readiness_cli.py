@@ -611,7 +611,10 @@ def phase04_run(
     try:
         project = load_config(config)
         output, result = run_phase04_authoritative(
-            roots=StorageRoots.from_environment(raw_root=project.raw_root),
+            roots=StorageRoots.from_environment(
+                raw_root=project.raw_root,
+                project_root=project.project_root,
+            ),
             run_id=run_id,
             runs_root=project.runs_root,
             evidence_root=project.evidence_root,

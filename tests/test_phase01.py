@@ -159,6 +159,30 @@ def test_phase01_real_run(raw_archive):
     assert float(extent.findtext("ymax", "0")) > float(extent.findtext("ymin", "0"))
     _assert_phase1_deliverables(pdir)
 
+    handoff_dir = pdir / "09_Handover_Package"
+    index_map = handoff_dir / f"{prefix}_Phase1_Master_GIS_Index_Map.pdf"
+    pdf_bytes = index_map.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF-1.4")
+    assert b"Phase 1 Master GIS Index Map" in pdf_bytes
+    assert b"Licence boundary" in pdf_bytes
+    assert b"Project buffers" in pdf_bytes
+    assert b"Deterministic project index" in pdf_bytes
+    assert b"Placeholder" not in pdf_bytes
+    assert b" re W n" in pdf_bytes  # the real map frame clips drawn vector geometry
+
+    from docx import Document
+
+    summary = Document(str(handoff_dir / f"{prefix}_Phase1_Desktop_Study_Summary.docx"))
+    summary_text = "\n".join(
+        [paragraph.text for paragraph in summary.paragraphs]
+        + [cell.text for table in summary.tables for row in table.rows for cell in row.cells]
+    )
+    assert "This summary reports deterministic measurements" in summary_text
+    assert "Working copies available\n79/79" in summary_text
+    assert f"Portable QGIS project layers\n{2 + len(config.master_gpkg_layers)}" in summary_text
+    assert "placeholder" not in summary_text.casefold()
+    assert "does not interpret ore potential or process real raw data" not in summary_text
+
     report = phase.qaqc(ctx)
     deterministic = next(item for item in report.items if "deterministic validation" in item.item)
     acceptance = next(item for item in report.items if "qualified acceptance" in item.item)
@@ -170,7 +194,7 @@ def test_phase01_real_run(raw_archive):
     assert "performed in QGIS (Phase 1 sub-workflow)" not in georef.note
     handoff = next(item for item in report.items if "handoff scaffold emitted" in item.item)
     assert handoff.decision is Decision.PASS
-    assert "index map remains an explicit placeholder" in handoff.note
+    assert "rendered from the exact Phase 01 boundary" in handoff.note
     assert not any(item.item == "Phase 1 handoff package complete" for item in report.items)
     assert 25000 in config.boundary.buffers_m
     decision = phase.gate(report, ctx)
@@ -202,3 +226,23 @@ def test_phase01_dry_run_creates_schema(project):
     assert qgz.exists()
     assert len(read_qgz_layers(qgz)) == len(config.master_gpkg_layers)
     _assert_phase1_deliverables(pdir)
+
+    handoff_dir = pdir / "09_Handover_Package"
+    index_map = handoff_dir / f"{config.register_prefix}_Phase1_Master_GIS_Index_Map.pdf"
+    pdf_bytes = index_map.read_bytes()
+    assert b"Phase 1 Master GIS Index Map - Dry Run" in pdf_bytes
+    assert b"No source geometry was opened" in pdf_bytes
+    assert b"Licence boundary" not in pdf_bytes
+
+    from docx import Document
+
+    summary = Document(
+        str(handoff_dir / f"{config.register_prefix}_Phase1_Desktop_Study_Summary.docx")
+    )
+    summary_text = "\n".join(
+        [paragraph.text for paragraph in summary.paragraphs]
+        + [cell.text for table in summary.tables for row in table.rows for cell in row.cells]
+    )
+    assert "Dry-run planning summary" in summary_text
+    assert "Working copies available\n0/79" in summary_text
+    assert "placeholder" not in summary_text.casefold()

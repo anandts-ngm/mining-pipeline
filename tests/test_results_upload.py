@@ -6,8 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from buduunkhad.core import results_upload as results_upload_module
 from buduunkhad.core.qgis_project import read_qgz_layers
-from buduunkhad.core.results_upload import ResultsUploadError, upload_results_view
+from buduunkhad.core.results_upload import (
+    RESULTS_UPLOAD_DIRECTORY_NAME,
+    ResultsUploadError,
+    upload_results_view,
+)
 from buduunkhad.core.results_view import materialize_results_view
 from buduunkhad.pipeline import run_pipeline
 
@@ -51,9 +56,10 @@ def test_upload_results_is_complete_portable_and_idempotent(raw_archive):
     assert repeated.created is False
     assert repeated.destination == first.destination
     assert repeated.manifest == first.manifest
-    assert first.destination.name == (
-        f"Buduunkhad_Results_{run.run_id}_{curated.manifest.view_id[:12]}"
-    )
+    assert first.destination.name == RESULTS_UPLOAD_DIRECTORY_NAME
+    assert [path.name for path in upload_root.iterdir() if path.is_dir()] == [
+        RESULTS_UPLOAD_DIRECTORY_NAME
+    ]
     destination_root = first.destination.resolve()
     for qgz in first.destination.rglob("*.qgz"):
         for layer in read_qgz_layers(qgz):
@@ -83,6 +89,83 @@ def test_upload_results_rejects_changed_existing_destination(raw_archive):
 
     with pytest.raises(ResultsUploadError, match="uploaded result changed"):
         upload_results_view(curated.root, config.base_dir / "drive-upload")
+
+
+def test_upload_results_replaces_the_single_current_directory(raw_archive):
+    config, register, _raw = raw_archive
+    first_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    first = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results-first",
+        run_id=first_run.run_id,
+    )
+    upload_root = config.base_dir / "drive-upload"
+    first_upload = upload_results_view(first.root, upload_root)
+
+    second_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    second = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results-second",
+        run_id=second_run.run_id,
+    )
+    second_upload = upload_results_view(second.root, upload_root)
+
+    assert second_upload.created is True
+    assert second_upload.destination == first_upload.destination
+    assert second_upload.manifest == second.manifest
+    assert second_upload.manifest != first_upload.manifest
+    assert [path.name for path in upload_root.iterdir() if path.is_dir()] == [
+        RESULTS_UPLOAD_DIRECTORY_NAME
+    ]
+
+
+def test_upload_results_restores_previous_directory_when_replacement_fails(
+    raw_archive,
+    monkeypatch,
+):
+    config, register, _raw = raw_archive
+    first_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    first = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results-first",
+        run_id=first_run.run_id,
+    )
+    upload_root = config.base_dir / "drive-upload"
+    original = upload_results_view(first.root, upload_root)
+    second_run = run_pipeline(config, register, only=["00"], dry_run=False)
+    second = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results-second",
+        run_id=second_run.run_id,
+    )
+    real_replace = results_upload_module.os.replace
+
+    def fail_install(source, destination):
+        if Path(source).name.startswith(".u-") and Path(destination).name == "Buduunkhad":
+            raise OSError("synthetic install failure")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(results_upload_module.os, "replace", fail_install)
+    with pytest.raises(ResultsUploadError, match="synthetic install failure"):
+        upload_results_view(second.root, upload_root)
+
+    restored = upload_results_view(first.root, upload_root)
+    assert restored.created is False
+    assert restored.destination == original.destination
+    assert restored.manifest == original.manifest
+    assert not any(path.name.startswith((".u-", ".b-")) for path in upload_root.iterdir())
 
 
 def test_upload_results_rejects_protected_destination(raw_archive):
@@ -135,3 +218,59 @@ def test_upload_results_rejects_symlinked_external_roots(raw_archive):
             external,
             protected_roots=(protected_link,),
         )
+
+
+def test_upload_results_namespaces_another_exploration_area(raw_archive):
+    config, register, _raw = raw_archive
+    run = run_pipeline(config, register, only=["00"], dry_run=False)
+    curated = materialize_results_view(
+        project_name="Nergui Undur",
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results",
+        run_id=run.run_id,
+    )
+
+    uploaded = upload_results_view(curated.root, config.base_dir / "multi-project-results")
+
+    assert uploaded.destination.name == "Nergui Undur"
+    assert uploaded.manifest.project_name == "Nergui Undur"
+
+
+def test_verified_local_mirror_can_feed_the_drive_copy(raw_archive):
+    config, register, _raw = raw_archive
+    run = run_pipeline(config, register, only=["00"], dry_run=False)
+    curated = materialize_results_view(
+        project_name=config.project.name,
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results",
+        run_id=run.run_id,
+    )
+    mirrored = upload_results_view(curated.root, config.base_dir / "local-results")
+    (mirrored.destination / "desktop.ini").write_text("Windows shell metadata", encoding="utf-8")
+
+    uploaded = upload_results_view(mirrored.destination, config.base_dir / "drive-results")
+
+    assert uploaded.manifest == mirrored.manifest
+    assert uploaded.destination.name == config.project.name
+
+
+def test_upload_results_rejects_unsafe_project_directory_name(raw_archive):
+    config, register, _raw = raw_archive
+    run = run_pipeline(config, register, only=["00"], dry_run=False)
+    curated = materialize_results_view(
+        project_name="../another-project",
+        raw_root=config.raw_root,
+        output_root=config.output_root,
+        runs_root=config.runs_root,
+        results_root=config.base_dir / "results",
+        run_id=run.run_id,
+    )
+
+    upload_root = config.base_dir / "multi-project-results"
+    with pytest.raises(ResultsUploadError, match="safe directory name"):
+        upload_results_view(curated.root, upload_root)
+    assert not upload_root.exists()

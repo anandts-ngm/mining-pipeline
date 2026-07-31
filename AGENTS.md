@@ -84,15 +84,21 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   outputs and validated AI review packages together. It does not merge their storage or trust
   lifecycles: pipeline layers remain read-only and AI proposal layers remain editable review work.
 - One local `BUDUUNKHAD_PROJECT_ROOT` may define the standard `raw`, `snapshots`, `work`,
-  `current`, `results`, `evaluation`, and `publish` layout. Complete sealed run artifacts remain
-  under `work/runs`; `results/latest` is an atomic, hash-recorded operator view containing only
-  declared Phase 00–04 outputs from one exact run plus explicitly selected, verified AI review
-  packages and an optional rebased integrated QGIS project.
-- Automatic results upload is disabled unless the machine-local
-  `BUDUUNKHAD_RESULTS_UPLOAD_ROOT` is set. When explicitly configured, a real CLI run copies its
-  verified curated view into a content-identified folder at that destination; dry runs, tests,
-  and library calls remain offline, and `--no-upload-results` or `--no-upload` disables the copy
-  for one invocation.
+  `current`, `results`, `evaluation`, and `publish` layout. The generic
+  `MINING_PIPELINE_WORK_ROOT` instead creates one isolated workspace below a validated project
+  slug, allowing additional exploration areas to use the same engine without sharing writable
+  paths. Existing project-specific variables take precedence for backward compatibility.
+  Complete sealed run artifacts remain under `work/runs`; `results/latest` is an atomic,
+  hash-recorded operator view containing only declared Phase 00–04 outputs from one exact run plus
+  explicitly selected, verified AI review packages and an optional rebased integrated QGIS project.
+- Automatic external delivery is disabled unless a machine-local destination is configured.
+  `MINING_PIPELINE_OUTPUTS_ROOT` or `BUDUUNKHAD_RESULTS_MIRROR_ROOT` maintains one verified local
+  directory per exploration area. `MINING_PIPELINE_DRIVE_ROOT` or
+  `BUDUUNKHAD_RESULTS_UPLOAD_ROOT` then copies that exact local mirror to Google Drive through
+  rollback-safe atomic replacement. Each destination retains the same source and view identities
+  in `run-summary.json`; a Drive failure cannot remove an already verified local mirror. Dry runs,
+  tests, and library calls remain offline, while `--no-upload-results` or `--no-upload` disables
+  only the Drive copy for one invocation.
 - Optional OpenAI and Anthropic adapters are lazy, keyless until execution, and require explicit
   non-legacy configuration and egress approval.
 - The Phase 03 handoff promotes explicit human decisions only to standalone `ACCEPTED_EVIDENCE`.

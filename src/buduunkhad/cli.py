@@ -104,11 +104,11 @@ def _curate_and_upload_results(
     review_project: Path | None = None,
     review_packages: tuple[Path, ...] = (),
 ):
-    from buduunkhad.core.results_upload import upload_results_view
+    from buduunkhad.core.results_upload import ResultsUploadError, upload_results_view
     from buduunkhad.core.results_view import materialize_results_view
     from buduunkhad.geospatial_ai.path_safety import StorageRoots
 
-    roots = StorageRoots.from_environment(raw_root=cfg.raw_root)
+    roots = StorageRoots.from_environment(raw_root=cfg.raw_root, project_root=cfg.project_root)
     result = materialize_results_view(
         project_name=cfg.project.name,
         raw_root=cfg.raw_root,
@@ -120,22 +120,42 @@ def _curate_and_upload_results(
         review_project=review_project,
         review_packages=review_packages,
     )
-    uploaded = (
+    protected_roots = (
+        cfg.raw_root,
+        cfg.output_root,
+        cfg.runs_root,
+        cfg.evidence_root,
+        cfg.results_root,
+    )
+    mirrored = (
         upload_results_view(
             result.root,
-            cfg.results_upload_root,
-            protected_roots=(
-                cfg.raw_root,
-                cfg.output_root,
-                cfg.runs_root,
-                cfg.evidence_root,
-                cfg.results_root,
-            ),
+            cfg.results_mirror_root,
+            protected_roots=protected_roots
+            + ((cfg.results_upload_root,) if cfg.results_upload_root is not None else ()),
         )
-        if upload and cfg.results_upload_root is not None
+        if cfg.results_mirror_root is not None
         else None
     )
-    return result, uploaded
+    try:
+        uploaded = (
+            upload_results_view(
+                mirrored.destination if mirrored is not None else result.root,
+                cfg.results_upload_root,
+                protected_roots=protected_roots
+                + ((cfg.results_mirror_root,) if cfg.results_mirror_root is not None else ()),
+            )
+            if upload and cfg.results_upload_root is not None
+            else None
+        )
+    except ResultsUploadError as exc:
+        if mirrored is not None:
+            raise ResultsUploadError(
+                f"local mirror remains verified at {mirrored.destination}; "
+                f"Drive delivery failed: {exc}"
+            ) from exc
+        raise
+    return result, mirrored, uploaded
 
 
 @app.command("list")
@@ -154,14 +174,19 @@ def info(config: Path = _CONFIG_OPT) -> None:
     typer.echo(
         f"Project:        {cfg.project.name} ({cfg.project.project_code} / {cfg.project.license_code})"
     )
+    typer.echo(f"Project slug:   {cfg.project.storage_slug}")
+    if cfg.project_root is not None:
+        typer.echo(f"Project root:   {cfg.project_root}")
     typer.echo(f"Target CRS:     {cfg.crs.target_name} ({cfg.crs.target_authority})")
     typer.echo(f"Raw root:       {cfg.raw_root}")
     typer.echo(f"Output root:    {cfg.output_root}")
     typer.echo(f"Runs root:      {cfg.runs_root}")
     typer.echo(f"Evidence root:  {cfg.evidence_root}")
     typer.echo(f"Results root:   {cfg.results_root}")
+    if cfg.results_mirror_root is not None:
+        typer.echo(f"Local mirror:   {cfg.results_mirror_root / cfg.project.name}")
     if cfg.results_upload_root is not None:
-        typer.echo(f"Upload root:    {cfg.results_upload_root}")
+        typer.echo(f"Drive target:   {cfg.results_upload_root / cfg.project.name}")
     typer.echo(f"Register:       {cfg.register_path}  ({len(register)} inputs)")
     typer.echo(f"Buffers (m):    {cfg.boundary.buffers_m}")
     typer.echo(f"Master layers:  {len(cfg.master_gpkg_layers)}")
@@ -271,7 +296,10 @@ def publish_deliverables(
     from buduunkhad.geospatial_ai.path_safety import PathSafetyError, StorageRoots
 
     try:
-        publish_root = StorageRoots.from_environment(raw_root=cfg.raw_root).require_publish_root()
+        publish_root = StorageRoots.from_environment(
+            raw_root=cfg.raw_root,
+            project_root=cfg.project_root,
+        ).require_publish_root()
     except PathSafetyError as exc:
         typer.secho(
             str(exc),
@@ -336,7 +364,7 @@ def curate_results(
     upload: bool = typer.Option(
         True,
         "--upload/--no-upload",
-        help="Copy the verified view to BUDUUNKHAD_RESULTS_UPLOAD_ROOT when configured.",
+        help="Copy the verified local mirror to the configured Drive root.",
     ),
     config: Path = _CONFIG_OPT,
 ) -> None:
@@ -347,7 +375,7 @@ def curate_results(
 
     cfg, _register = load_project(config)
     try:
-        result, uploaded = _curate_and_upload_results(
+        result, mirrored, uploaded = _curate_and_upload_results(
             cfg,
             run_id=run_id,
             upload=upload,
@@ -365,9 +393,13 @@ def curate_results(
         f"{len(result.manifest.files)} declared result file(s)"
     )
     typer.echo(f"  Source run: {result.manifest.source_run_id}")
+    if mirrored is not None:
+        mirror_action = "Copied" if mirrored.created else "Verified"
+        typer.secho(f"{mirror_action} local results mirror:", fg="green")
+        typer.echo(f"  {mirrored.destination}")
     if uploaded is not None:
         upload_action = "Copied" if uploaded.created else "Verified"
-        typer.secho(f"{upload_action} Drive-synced results:", fg="green")
+        typer.secho(f"{upload_action} Google Drive results:", fg="green")
         typer.echo(f"  {uploaded.destination}")
 
 
@@ -394,7 +426,10 @@ def backup_raw(
 
     cfg, _register = load_project(config)
     try:
-        publish_root = StorageRoots.from_environment(raw_root=cfg.raw_root).require_publish_root()
+        publish_root = StorageRoots.from_environment(
+            raw_root=cfg.raw_root,
+            project_root=cfg.project_root,
+        ).require_publish_root()
     except PathSafetyError as exc:
         typer.secho(str(exc), fg="red", err=True)
         raise typer.Exit(2) from exc
@@ -525,12 +560,14 @@ def run(
     if manifest.error:
         typer.secho(f"Run failed: {manifest.error}", fg="red", err=True)
         raise typer.Exit(2)
-    if not manifest.dry_run and cfg.results_upload_root is not None:
+    if not manifest.dry_run and (
+        cfg.results_mirror_root is not None or cfg.results_upload_root is not None
+    ):
         from buduunkhad.core.results_upload import ResultsUploadError
         from buduunkhad.core.results_view import ResultsViewError
 
         try:
-            results, uploaded = _curate_and_upload_results(
+            results, mirrored, uploaded = _curate_and_upload_results(
                 cfg,
                 run_id=manifest.run_id,
                 upload=upload_results,
@@ -539,9 +576,12 @@ def run(
             typer.secho(f"Automatic results upload failed after the run: {exc}", fg="red")
             raise typer.Exit(2) from exc
         typer.echo(f"Curated results: {results.root}")
+        if mirrored is not None:
+            mirror_action = "Copied" if mirrored.created else "Verified"
+            typer.echo(f"{mirror_action} local results mirror: {mirrored.destination}")
         if uploaded is not None:
             upload_action = "Copied" if uploaded.created else "Verified"
-            typer.echo(f"{upload_action} Drive-synced results: {uploaded.destination}")
+            typer.echo(f"{upload_action} Google Drive results: {uploaded.destination}")
 
 
 def _make_phase_command(phase_id: str, phase_name: str):

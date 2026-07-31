@@ -49,18 +49,24 @@ Where things live
 - External methodology remains reachable read-only through the
   BUDUUNKHAD_WORKFLOW_DOCS_ROOT environment root for source reconciliation.
 - Set BUDUUNKHAD_PROJECT_ROOT once to use the standard local `raw`, `snapshots`,
-  `work`, `current`, `results`, `evaluation`, and `publish` folders. More specific
-  root variables remain available for non-standard deployments.
+  `work`, `current`, `results`, `evaluation`, and `publish` folders. For a shared
+  multi-area installation, set MINING_PIPELINE_WORK_ROOT instead; each project is
+  isolated beneath its validated `project.slug`. Existing project-specific root
+  variables continue to take precedence.
 - Raw geological data and production outputs are external to Git. The raw archive
   is immutable and checksum-verified. Complete sealed internals stay under
   `work/runs`; `current` is a compatibility view; `buduunkhad results --run-id ID`
   atomically creates the small operator-facing `results/latest` view from declared
   outputs only. Repeat `--review-package` and supply `--review-project` when the
-  portable view should include verified Phase 03 AI review data. Set the explicit
-  machine-local `BUDUUNKHAD_RESULTS_UPLOAD_ROOT` to a Google Drive for Desktop
-  folder to copy every real run and later AI-integrated results view there
-  automatically. Use `--no-upload-results` or `--no-upload` for a local-only
-  invocation. External publication remains a separate deliberate operation.
+  portable view should include verified Phase 03 AI review data. Set
+  MINING_PIPELINE_OUTPUTS_ROOT (or BUDUUNKHAD_RESULTS_MIRROR_ROOT) for a stable
+  verified local team view, and MINING_PIPELINE_DRIVE_ROOT (or
+  BUDUUNKHAD_RESULTS_UPLOAD_ROOT) for the matching Google Drive parent. Each area
+  receives one human-readable directory derived from its manifest-bound project
+  name. The Drive copy is made from the verified local mirror when both are
+  configured; both retain identical hashes and `view_id`. Use
+  `--no-upload-results` or `--no-upload` to skip only the Drive copy. Sealed run
+  history remains under `work/runs`; external publication is separate.
 
 Implemented phase boundary
 --------------------------

@@ -59,8 +59,13 @@ class StorageRoots(BaseModel):
         return self
 
     @classmethod
-    def from_environment(cls, *, raw_root: Path) -> StorageRoots:
-        project_root = _environment_path(PROJECT_ROOT_ENV)
+    def from_environment(
+        cls,
+        *,
+        raw_root: Path,
+        project_root: Path | None = None,
+    ) -> StorageRoots:
+        project_root = project_root or _environment_path(PROJECT_ROOT_ENV)
         return cls(
             raw_root=raw_root,
             workflow_docs_root=_environment_path(WORKFLOW_DOCS_ROOT_ENV),

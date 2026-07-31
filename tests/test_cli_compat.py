@@ -9,7 +9,12 @@ from click import unstyle
 from typer.testing import CliRunner
 
 from buduunkhad.cli import app
-from buduunkhad.config import OUTPUT_ROOT_ENV, RAW_ROOT_ENV, RESULTS_UPLOAD_ROOT_ENV
+from buduunkhad.config import (
+    OUTPUT_ROOT_ENV,
+    RAW_ROOT_ENV,
+    RESULTS_MIRROR_ROOT_ENV,
+    RESULTS_UPLOAD_ROOT_ENV,
+)
 from buduunkhad.core.qaqc import Decision, new_report
 from buduunkhad.phases.phase00_archive import Phase00Archive
 from buduunkhad.pipeline import RunManifest
@@ -142,6 +147,8 @@ def test_real_run_automatically_uploads_curated_results(raw_archive, monkeypatch
     _config, _register, raw_root = raw_archive
     config_path = raw_root.parent.parent / "config" / "project.yaml"
     upload_root = raw_root.parent.parent / "drive-results"
+    mirror_root = raw_root.parent.parent / "local-results"
+    monkeypatch.setenv(RESULTS_MIRROR_ROOT_ENV, str(mirror_root))
     monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(upload_root))
 
     result = runner.invoke(
@@ -150,9 +157,63 @@ def test_real_run_automatically_uploads_curated_results(raw_archive, monkeypatch
     )
 
     assert result.exit_code == 0, result.stdout
-    assert "Drive-synced results:" in result.stdout
-    uploaded = list(upload_root.glob("Buduunkhad_Results_*"))
-    assert len(uploaded) == 1
+    assert "local results mirror:" in result.stdout
+    assert "Google Drive results:" in result.stdout
+    assert [path.name for path in mirror_root.iterdir() if path.is_dir()] == ["Buduunkhad"]
+    assert [path.name for path in upload_root.iterdir() if path.is_dir()] == ["Buduunkhad"]
+    assert (mirror_root / "Buduunkhad" / "run-summary.json").read_bytes() == (
+        upload_root / "Buduunkhad" / "run-summary.json"
+    ).read_bytes()
+
+
+def test_no_upload_still_refreshes_the_local_results_mirror(raw_archive, monkeypatch) -> None:
+    _config, _register, raw_root = raw_archive
+    config_path = raw_root.parent.parent / "config" / "project.yaml"
+    mirror_root = raw_root.parent.parent / "local-results"
+    drive_root = raw_root.parent.parent / "drive-results"
+    monkeypatch.setenv(RESULTS_MIRROR_ROOT_ENV, str(mirror_root))
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(drive_root))
+
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "00", "--no-upload-results"],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    assert (mirror_root / "Buduunkhad" / "run-summary.json").is_file()
+    assert not drive_root.exists()
+
+
+def test_drive_failure_preserves_the_verified_local_mirror(
+    raw_archive,
+    monkeypatch,
+) -> None:
+    from buduunkhad.core import results_upload as results_upload_module
+    from buduunkhad.core.results_upload import ResultsUploadError
+
+    _config, _register, raw_root = raw_archive
+    config_path = raw_root.parent.parent / "config" / "project.yaml"
+    mirror_root = raw_root.parent.parent / "local-results"
+    drive_root = raw_root.parent.parent / "drive-results"
+    monkeypatch.setenv(RESULTS_MIRROR_ROOT_ENV, str(mirror_root))
+    monkeypatch.setenv(RESULTS_UPLOAD_ROOT_ENV, str(drive_root))
+    real_upload = results_upload_module.upload_results_view
+
+    def fail_drive(source, destination, **kwargs):
+        if Path(destination) == drive_root:
+            raise ResultsUploadError("synthetic Drive outage")
+        return real_upload(source, destination, **kwargs)
+
+    monkeypatch.setattr(results_upload_module, "upload_results_view", fail_drive)
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "00"],
+    )
+
+    assert result.exit_code == 2
+    assert "local mirror remains verified" in result.output
+    assert "synthetic Drive outage" in result.output
+    assert (mirror_root / "Buduunkhad" / "run-summary.json").is_file()
 
 
 def test_failed_run_exit_and_message_do_not_depend_on_upload_root(
@@ -204,7 +265,7 @@ def test_controlled_gate_stop_still_curates_results(project, monkeypatch) -> Non
 
     def fake_curate(cfg, *, run_id, upload, **kwargs):  # noqa: ARG001
         calls.append((run_id, upload))
-        return SimpleNamespace(root=work / "results" / "latest"), None
+        return SimpleNamespace(root=work / "results" / "latest"), None, None
 
     monkeypatch.setattr("buduunkhad.cli.run_pipeline", lambda *args, **kwargs: manifest)
     monkeypatch.setattr("buduunkhad.cli._curate_and_upload_results", fake_curate)
