@@ -115,6 +115,14 @@ def test_phase03_dry_run_templates_only(project):
     assert list(
         (pdir / "12_Phase3_QAQC_and_Handover").glob("*Phase3_Technical_Processing_Log*.xlsx")
     )
+    regional_map = next(
+        (pdir / "03_Regional_Metallogenic_1M500K").glob("*RegionalMetallogenic_Context_Map*.pdf")
+    )
+    cmcs_map = next(
+        (pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km").glob("*CMCS_Context_Map*.pdf")
+    )
+    assert regional_map.read_bytes().startswith(b"%PDF-1.4")
+    assert cmcs_map.read_bytes().startswith(b"%PDF-1.4")
     # schema present but empty (no ingested points, no CMCS buffer built)
     gpkg = _evidence_gpkg(config)
     assert len(vector_io.list_gpkg_layers(gpkg)) == 17
@@ -157,6 +165,10 @@ def test_phase03_cmcs_buffer_four_rings(raw_archive):
     assert len(gdf) == 4
     assert sorted(gdf["distance_m"]) == [5000, 10000, 20000, 25000]
     assert (gdf["validation_status"] == "Historical only").all()
+    context_map = next(
+        (pdir / "08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km").glob("*CMCS_Context_Map*.pdf")
+    )
+    assert b"CMCS/MRPAM Context Map" in context_map.read_bytes()
 
 
 def test_phase03_step7a_standalone_25km_buffer(raw_archive):

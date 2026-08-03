@@ -32,7 +32,9 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from buduunkhad.core import naming, registers, vector_io
+from shapely.geometry.base import BaseGeometry
+
+from buduunkhad.core import naming, pdf_map, registers, vector_io
 from buduunkhad.core.evidence_manifest import EvidenceExecutionMode, EvidenceRole
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
@@ -226,6 +228,7 @@ class Phase04ProspectRanking(Phase):
     _notes: list[str]
     _model_wired: bool
     _model_fit: dict[str, object]
+    _boundary_geometries: tuple[BaseGeometry, ...]
 
     def __init__(self) -> None:
         self._n_candidates = 0
@@ -241,6 +244,7 @@ class Phase04ProspectRanking(Phase):
             "label": "pending (03A score matrix not yet completed)",
             "available": False,
         }
+        self._boundary_geometries = ()
 
     # ------------------------------------------------------------------ #
 
@@ -251,6 +255,7 @@ class Phase04ProspectRanking(Phase):
         if ctx.dry_run:
             self._emit_prospect_schema(ctx, pdir, result)
             self._emit_registers(ctx, pdir, result, prospects=[])
+            self._write_ranking_map(ctx, pdir, result, prospects=[])
             self._write_method_note(ctx, pdir, result)
             self._notes.append(
                 "dry-run: 5 folders + prospect schema + empty ranking/GoNoGo templates"
@@ -261,6 +266,7 @@ class Phase04ProspectRanking(Phase):
 
         prospects = self._delineate_and_rank(ctx, pdir, result)
         self._emit_registers(ctx, pdir, result, prospects=prospects)
+        self._write_ranking_map(ctx, pdir, result, prospects=prospects)
         self._write_method_note(ctx, pdir, result)
         self._write_technical_log(ctx, pdir, result)
         result.log(
@@ -459,6 +465,7 @@ class Phase04ProspectRanking(Phase):
             )
             self._emit_prospect_schema(ctx, pdir, result)
             return []
+        self._boundary_geometries = tuple(boundary.geometry)
 
         # evidence overlay (01): the non-empty layers actually used for scoring, for traceability
         overlay_path = (
@@ -536,10 +543,12 @@ class Phase04ProspectRanking(Phase):
             )
         )
         if prospects:
-            geoms = [
-                p.pop("_geometry") for p in prospects
-            ]  # registers reuse the geometry-less rows
-            gdf = gpd.GeoDataFrame(prospects, geometry=geoms, crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
+            geoms = [p["_geometry"] for p in prospects]
+            attributes = [
+                {key: value for key, value in prospect.items() if key != "_geometry"}
+                for prospect in prospects
+            ]
+            gdf = gpd.GeoDataFrame(attributes, geometry=geoms, crs=f"EPSG:{epsg}")  # ty: ignore[no-matching-overload]
             gdf = gdf.reindex(columns=[*_PROSPECT_COLUMNS, "geometry"])
             vector_io.write_layer(gdf, prospect_path, layer=_PROSPECT_LAYER)
             result.add_output(prospect_path)
@@ -848,6 +857,90 @@ class Phase04ProspectRanking(Phase):
         for path, columns, rows, title in tables:
             registers.write_table_xlsx(rows, columns, path, sheet_title=title)
             result.add_output(path)
+
+    def _write_ranking_map(
+        self,
+        ctx: RunContext,
+        pdir: Path,
+        result: PhaseResult,
+        *,
+        prospects: list[dict],
+    ) -> None:
+        path = (
+            pdir
+            / "05_A_B_C_D_Field_Priority"
+            / f"{ctx.config.register_prefix}_Preliminary_Prospect_Ranking_Map.pdf"
+        )
+        class_styles = {
+            "A": ((0.70, 0.00, 0.00), (0.96, 0.65, 0.65)),
+            "B": ((0.85, 0.35, 0.00), (0.98, 0.77, 0.48)),
+            "C": ((0.72, 0.58, 0.00), (0.98, 0.91, 0.54)),
+        }
+        layers: list[pdf_map.MapLayer] = []
+        if self._boundary_geometries:
+            layers.append(
+                pdf_map.MapLayer(
+                    name="Licence boundary",
+                    geometries=self._boundary_geometries,
+                    stroke=(0.05, 0.16, 0.55),
+                    line_width=1.8,
+                )
+            )
+        for prospect_class in ("A", "B", "C"):
+            geometries = tuple(
+                prospect["_geometry"]
+                for prospect in prospects
+                if prospect.get("prospect_class") == prospect_class
+                and isinstance(prospect.get("_geometry"), BaseGeometry)
+            )
+            if geometries:
+                stroke, fill = class_styles[prospect_class]
+                layers.append(
+                    pdf_map.MapLayer(
+                        name=f"Class {prospect_class} comparator prospect",
+                        geometries=geometries,
+                        stroke=stroke,
+                        fill=fill,
+                        line_width=1.1,
+                    )
+                )
+        labels: list[pdf_map.MapLabel] = []
+        for prospect in prospects[:50]:
+            geometry = prospect.get("_geometry")
+            if not isinstance(geometry, BaseGeometry) or geometry.is_empty:
+                continue
+            point = geometry.representative_point()
+            labels.append(
+                pdf_map.MapLabel(
+                    x=float(point.x),
+                    y=float(point.y),
+                    text=str(prospect.get("candidate_id", "")),
+                )
+            )
+        notes = (
+            "Fixed-grid legacy comparator; not the authoritative prospect-polygon workflow.",
+            f"Data gaps scored zero: {', '.join(self._data_gaps) or 'none'}.",
+            "A/B/C classes are review signals, not mineralization or field-work approval.",
+        )
+        pdf_map.write_map_pdf(
+            path,
+            title="Phase 4 Preliminary Prospect Ranking Map",
+            subtitle=(
+                f"{ctx.config.project.project_code} / {ctx.config.project.name} - legacy comparator"
+            ),
+            crs_label=ctx.config.crs.target_authority,
+            run_id=ctx.run_id,
+            layers=tuple(layers),
+            labels=tuple(labels),
+            notes=notes,
+            footer="Preliminary support evidence only - not ore proof or an operational decision.",
+            empty_message=(
+                "Dry-run layout only; no source geometry was opened."
+                if ctx.dry_run
+                else "No comparator prospect geometry was produced; see the data-gap register."
+            ),
+        )
+        result.add_output(path)
 
     def _write_method_note(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
         cfg = ctx.config

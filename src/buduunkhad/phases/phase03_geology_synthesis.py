@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from buduunkhad.core import naming, registers, vector_io
+from buduunkhad.core import naming, pdf_map, registers, vector_io
 from buduunkhad.core.evidence_manifest import (
     EvidenceExecutionMode,
     EvidenceOrigin,
@@ -322,6 +322,7 @@ class Phase03GeologySynthesis(Phase):
 
         # ---- templates / registers (dry-run AND real run; occurrence registers now populated) ----
         self._emit_templates(ctx, pdir, result)
+        self._write_context_maps(ctx, pdir, evidence_path, result)
 
         if ctx.dry_run:
             self._notes.append("dry-run: templates + empty 17-layer evidence GPKG schema only")
@@ -951,6 +952,150 @@ class Phase03GeologySynthesis(Phase):
         note_path.write_text(_PHASE3_NOTE, encoding="utf-8")
         result.add_output(note_path)
         self._templates.append(note_path)
+
+    def _write_context_maps(
+        self,
+        ctx: RunContext,
+        pdir: Path,
+        evidence_path: Path,
+        result: PhaseResult,
+    ) -> None:
+        cfg = ctx.config
+        boundary = ()
+        if not ctx.dry_run:
+            boundary_gdf = self._load_boundary_aoi(ctx)
+            if boundary_gdf is not None:
+                boundary = tuple(boundary_gdf.geometry)
+
+        def layer_geometries(layer_name: str) -> tuple:
+            if ctx.dry_run or layer_name not in self._evidence_layers:
+                return ()
+            gdf = vector_io.read_layer(evidence_path, layer_name)
+            if gdf.crs is None or gdf.crs.to_epsg() != cfg.target_epsg:
+                raise ValueError(f"Phase 03 map layer {layer_name} is not in the target CRS")
+            return tuple(geometry for geometry in gdf.geometry if not geometry.is_empty)
+
+        rings = layer_geometries(_CMCS_BUFFER_LAYER)
+        metallogenic = layer_geometries("metallogenic_zones_polygon")
+        ore_context = layer_geometries("ore_district_node_context_polygon")
+        occurrences = (
+            *layer_geometries("cmcs_nearest_occurrences_point"),
+            *layer_geometries("mineralized_points_point"),
+        )
+
+        regional_layers = [
+            pdf_map.MapLayer(
+                name="25 km context rings",
+                geometries=rings,
+                stroke=(0.45, 0.45, 0.45),
+                line_width=0.8,
+                dashed=True,
+            ),
+            pdf_map.MapLayer(
+                name="Metallogenic context",
+                geometries=metallogenic,
+                stroke=(0.40, 0.05, 0.55),
+                fill=(0.88, 0.72, 0.92),
+                line_width=1.0,
+            ),
+            pdf_map.MapLayer(
+                name="Ore district/node context",
+                geometries=ore_context,
+                stroke=(0.72, 0.32, 0.00),
+                fill=(0.96, 0.78, 0.56),
+                line_width=1.0,
+            ),
+            pdf_map.MapLayer(
+                name="Licence boundary",
+                geometries=boundary,
+                stroke=(0.05, 0.16, 0.55),
+                line_width=1.8,
+            ),
+        ]
+        regional_path = (
+            pdir
+            / "03_Regional_Metallogenic_1M500K"
+            / naming.data_name(
+                cfg.data_prefix,
+                "RegionalMetallogenic_Context_Map",
+                version=1,
+                ext="pdf",
+            )
+        )
+        pdf_map.write_map_pdf(
+            regional_path,
+            title="Phase 3 Regional Metallogenic Context Map",
+            subtitle=f"{cfg.project.project_code} / {cfg.project.name} - regional context only",
+            crs_label=cfg.crs.target_authority,
+            run_id=ctx.run_id,
+            layers=tuple(regional_layers),
+            notes=(
+                "Only exact manifest-authorized metallogenic geometry is drawn.",
+                (
+                    "No reviewed metallogenic zone geometry is present; the map records that gap."
+                    if not metallogenic and not ore_context
+                    else "Regional geometry remains historical/contextual support evidence."
+                ),
+            ),
+            footer="Historical/contextual support only - not mineralization proof.",
+            empty_message=(
+                "Dry-run layout only; no source geometry was opened."
+                if ctx.dry_run
+                else "No usable regional context geometry was available."
+            ),
+        )
+        result.add_output(regional_path)
+
+        cmcs_layers = [
+            pdf_map.MapLayer(
+                name="CMCS 5/10/20/25 km rings",
+                geometries=rings,
+                stroke=(0.42, 0.42, 0.42),
+                line_width=0.9,
+                dashed=True,
+            ),
+            pdf_map.MapLayer(
+                name="Context occurrences",
+                geometries=occurrences,
+                stroke=(0.75, 0.05, 0.05),
+                fill=(0.92, 0.15, 0.15),
+                line_width=1.0,
+            ),
+            pdf_map.MapLayer(
+                name="Licence boundary",
+                geometries=boundary,
+                stroke=(0.05, 0.16, 0.55),
+                line_width=1.8,
+            ),
+        ]
+        cmcs_path = (
+            pdir
+            / _CMCS_FOLDER
+            / naming.data_name(cfg.data_prefix, "CMCS_Context_Map", version=1, ext="pdf")
+        )
+        pdf_map.write_map_pdf(
+            cmcs_path,
+            title="Phase 3 CMCS/MRPAM Context Map",
+            subtitle=f"{cfg.project.project_code} / {cfg.project.name} - 5/10/20/25 km context",
+            crs_label=cfg.crs.target_authority,
+            run_id=ctx.run_id,
+            layers=tuple(cmcs_layers),
+            notes=(
+                "The 25 km ring is an occurrence-coverage tool, not a mineralization boundary.",
+                (
+                    "No external CMCS occurrence geometry is present; available registered points only."
+                    if not occurrences
+                    else "Displayed occurrences remain historical/contextual support evidence."
+                ),
+            ),
+            footer="Context only - not proof of mineralization inside the licence.",
+            empty_message=(
+                "Dry-run layout only; no source geometry was opened."
+                if ctx.dry_run
+                else "No usable CMCS context geometry was available."
+            ),
+        )
+        result.add_output(cmcs_path)
 
     def _deposit_model_rows(self) -> list[dict[str, object]]:
         return [

@@ -255,6 +255,10 @@ def test_phase04_dry_run_templates(project):
     assert list((pdir / "04_Confidence_DataGap_NextAction").glob("*DataGap_and_NextAction*.xlsx"))
     assert list((pdir / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg"))
     assert list((pdir / "05_A_B_C_D_Field_Priority").glob("*Method_Note.md"))
+    ranking_map = next(
+        (pdir / "05_A_B_C_D_Field_Priority").glob("*Preliminary_Prospect_Ranking_Map.pdf")
+    )
+    assert ranking_map.read_bytes().startswith(b"%PDF-1.4")
 
 
 # --------------------------------------------------------------------------- #
@@ -277,6 +281,10 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
 
     pdir = _p04_dir(config)
     assert list((pdir / "03_Scoring_Matrix").glob("*Evidence_Score_Grid*.gpkg"))
+    ranking_map = next(
+        (pdir / "05_A_B_C_D_Field_Priority").glob("*Preliminary_Prospect_Ranking_Map.pdf")
+    )
+    assert b"legacy comparator" in ranking_map.read_bytes()
 
     # the three desktop-unavailable criteria are recorded as data gaps
     gap = next((pdir / "04_Confidence_DataGap_NextAction").glob("*DataGap_and_NextAction*.xlsx"))

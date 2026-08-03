@@ -14,15 +14,17 @@ Make the 79 inputs GIS-ready and stand up the EPSG:32647 master database:
 
 from __future__ import annotations
 
-import math
-from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
-from shapely.geometry.base import BaseGeometry
-
 from buduunkhad.config import InputRecord
-from buduunkhad.core import boundary_validation, naming, qgis_project, registers, vector_io
+from buduunkhad.core import (
+    boundary_validation,
+    naming,
+    pdf_map,
+    qgis_project,
+    registers,
+    vector_io,
+)
 from buduunkhad.core import crs as crs_mod
 from buduunkhad.core.ingest import load_manifest
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
@@ -963,15 +965,21 @@ def _write_index_map(
     buffer_path: Path | None,
 ) -> Path:
     if ctx.dry_run:
-        return _write_simple_pdf(
+        return pdf_map.write_map_pdf(
             path,
-            [
-                "Phase 1 Master GIS Index Map - Dry Run",
-                f"Project: {ctx.config.project.project_code} / {ctx.config.project.name}",
-                f"License: {ctx.config.project.license_code}",
-                f"Target CRS: {ctx.config.crs.target_name}, {ctx.config.crs.target_authority}",
-                "No source geometry was opened; this file verifies the planned output path only.",
-            ],
+            title="Phase 1 Master GIS Index Map - Dry Run",
+            subtitle=(
+                f"{ctx.config.project.project_code} / {ctx.config.project.name} - "
+                f"{ctx.config.project.license_code}"
+            ),
+            crs_label=ctx.config.crs.target_authority,
+            run_id=ctx.run_id,
+            layers=(),
+            notes=(),
+            footer="Dry-run planning output only.",
+            empty_message=(
+                "No source geometry was opened; this file verifies the planned output path only."
+            ),
         )
     if boundary_path is None or buffer_path is None:
         raise ValueError("a real Phase 1 index map requires the boundary and buffer derivatives")
@@ -986,328 +994,42 @@ def _write_index_map(
     ):
         raise ValueError("Phase 1 index-map geometry is not in the configured target CRS")
 
-    page_width, page_height = 842.0, 595.0
-    map_left, map_bottom, map_width, map_height = 48.0, 70.0, 590.0, 455.0
-    xmin, ymin, xmax, ymax = (float(value) for value in buffers.total_bounds)
-    span_x = xmax - xmin
-    span_y = ymax - ymin
-    if (
-        not all(math.isfinite(value) for value in (xmin, ymin, xmax, ymax))
-        or min(span_x, span_y) <= 0
-    ):
-        raise ValueError("Phase 1 index-map extent is invalid")
-    padding = max(span_x, span_y) * 0.025
-    xmin -= padding
-    ymin -= padding
-    xmax += padding
-    ymax += padding
-    span_x = xmax - xmin
-    span_y = ymax - ymin
-    scale = min(map_width / span_x, map_height / span_y)
-    draw_width = span_x * scale
-    draw_height = span_y * scale
-    draw_left = map_left + (map_width - draw_width) / 2
-    draw_bottom = map_bottom + (map_height - draw_height) / 2
-
-    def transform(x: float, y: float) -> tuple[float, float]:
-        return draw_left + (x - xmin) * scale, draw_bottom + (y - ymin) * scale
-
-    content = [
-        "1 1 1 rg",
-        f"0 0 {page_width:.2f} {page_height:.2f} re f",
-        "1 J 1 j",
-        "0.97 0.97 0.97 rg",
-        f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re f",
-        "q",
-        f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re W n",
-    ]
-    grid_interval = _nice_distance(max(span_x, span_y) / 6)
-    content.extend(
-        _grid_commands(
-            xmin=xmin,
-            ymin=ymin,
-            xmax=xmax,
-            ymax=ymax,
-            interval=grid_interval,
-            transform=transform,
-        )
-    )
-    content.extend(["0.45 0.45 0.45 RG", "0.7 w", "[4 3] 0 d"])
-    for geometry in buffers.geometry:
-        content.extend(_geometry_path_commands(geometry, transform))
-    content.append("S")
-    content.extend(["[] 0 d", "0.96 0.83 0.83 rg", "0.75 0.05 0.05 RG", "1.6 w"])
-    for geometry in boundary.geometry:
-        content.extend(_geometry_path_commands(geometry, transform))
-    content.extend(["B*", "Q", "0 0 0 RG", "0 0 0 rg", "0.8 w"])
-    content.append(f"{map_left:.2f} {map_bottom:.2f} {map_width:.2f} {map_height:.2f} re S")
-
-    content.extend(
-        _coordinate_label_commands(
-            xmin=xmin,
-            ymin=ymin,
-            xmax=xmax,
-            ymax=ymax,
-            interval=grid_interval,
-            transform=transform,
-            map_left=map_left,
-            map_bottom=map_bottom,
-            map_width=map_width,
-            map_height=map_height,
-        )
-    )
-    content.extend(_scale_bar_commands(map_left + 20, map_bottom + 18, span_x, scale))
-    content.extend(_north_arrow_commands(785, 485))
     boundary_source = ctx.record_by_no(ctx.config.boundary.input_no).filename
-    source_lines = _wrap_map_label(boundary_source, width=29)
-
-    content.extend(
-        [
-            _pdf_text(48, 560, "Phase 1 Master GIS Index Map", 18),
-            _pdf_text(
-                48,
-                542,
-                f"{ctx.config.project.project_code} / {ctx.config.project.name} - "
-                f"{ctx.config.project.license_code}",
-                10,
-            ),
-            _pdf_text(664, 440, "Legend", 12),
-            "0.75 0.05 0.05 RG 1.6 w 664 420 m 704 420 l S",
-            _pdf_text(712, 416, "Licence boundary", 9),
-            "0.45 0.45 0.45 RG 0.7 w [4 3] 0 d 664 400 m 704 400 l S [] 0 d",
-            _pdf_text(712, 396, "Project buffers", 9),
-            _pdf_text(664, 370, "Buffers", 10),
-            _pdf_text(
-                664,
-                354,
-                ", ".join(_format_distance(value) for value in ctx.config.boundary.buffers_m),
-                8,
-            ),
-            _pdf_text(664, 324, "Coordinate reference", 10),
-            _pdf_text(664, 308, ctx.config.crs.target_authority, 9),
-            _pdf_text(664, 292, ctx.config.crs.target_name, 8),
-            _pdf_text(664, 252, "Source", 10),
-            _pdf_text(664, 236, f"Input #{ctx.config.boundary.input_no}", 8),
-            *[
-                _pdf_text(664, 223 - index * 10, line, 6)
-                for index, line in enumerate(source_lines[:3])
-            ],
-            _pdf_text(664, 198, "Run identity", 10),
-            _pdf_text(664, 182, ctx.run_id, 7),
-            _pdf_text(
-                48,
-                30,
-                "Deterministic project index - administrative context only; not geological evidence.",
-                8,
-            ),
-        ]
+    buffer_labels = ", ".join(
+        f"{value / 1000:g} km" if value >= 1000 else f"{value:g} m"
+        for value in ctx.config.boundary.buffers_m
     )
-    return _write_pdf_stream(
+    return pdf_map.write_map_pdf(
         path,
-        "\n".join(content).encode("ascii", errors="replace"),
-        page_width=page_width,
-        page_height=page_height,
-    )
-
-
-def _geometry_path_commands(
-    geometry: BaseGeometry,
-    transform: Callable[[float, float], tuple[float, float]],
-) -> list[str]:
-    commands: list[str] = []
-    for polygon in _iter_polygons(geometry):
-        for ring in (polygon.exterior, *polygon.interiors):
-            coordinates = list(ring.coords)
-            if not coordinates:
-                continue
-            x, y = transform(float(coordinates[0][0]), float(coordinates[0][1]))
-            commands.append(f"{x:.2f} {y:.2f} m")
-            for coordinate in coordinates[1:]:
-                x, y = transform(float(coordinate[0]), float(coordinate[1]))
-                commands.append(f"{x:.2f} {y:.2f} l")
-            commands.append("h")
-    return commands
-
-
-def _iter_polygons(geometry: BaseGeometry) -> Iterator[Polygon]:
-    if isinstance(geometry, Polygon):
-        yield geometry
-    elif isinstance(geometry, (MultiPolygon, GeometryCollection)):
-        for part in geometry.geoms:
-            yield from _iter_polygons(part)
-
-
-def _nice_distance(value: float) -> float:
-    if not math.isfinite(value) or value <= 0:
-        raise ValueError("map grid distance must be positive")
-    exponent = math.floor(math.log10(value))
-    fraction = value / (10**exponent)
-    if fraction < 1.5:
-        nice = 1.0
-    elif fraction < 3.5:
-        nice = 2.0
-    elif fraction < 7.5:
-        nice = 5.0
-    else:
-        nice = 10.0
-    return nice * (10**exponent)
-
-
-def _grid_values(minimum: float, maximum: float, interval: float) -> Iterator[float]:
-    current = math.ceil(minimum / interval) * interval
-    while current <= maximum:
-        yield current
-        current += interval
-
-
-def _grid_commands(
-    *,
-    xmin: float,
-    ymin: float,
-    xmax: float,
-    ymax: float,
-    interval: float,
-    transform: Callable[[float, float], tuple[float, float]],
-) -> list[str]:
-    commands = ["0.84 0.84 0.84 RG", "0.35 w"]
-    for value in _grid_values(xmin, xmax, interval):
-        x1, y1 = transform(value, ymin)
-        x2, y2 = transform(value, ymax)
-        commands.append(f"{x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
-    for value in _grid_values(ymin, ymax, interval):
-        x1, y1 = transform(xmin, value)
-        x2, y2 = transform(xmax, value)
-        commands.append(f"{x1:.2f} {y1:.2f} m {x2:.2f} {y2:.2f} l S")
-    return commands
-
-
-def _coordinate_label_commands(
-    *,
-    xmin: float,
-    ymin: float,
-    xmax: float,
-    ymax: float,
-    interval: float,
-    transform: Callable[[float, float], tuple[float, float]],
-    map_left: float,
-    map_bottom: float,
-    map_width: float,
-    map_height: float,
-) -> list[str]:
-    commands: list[str] = []
-    for value in _grid_values(xmin, xmax, interval):
-        x, _ = transform(value, ymin)
-        if map_left <= x <= map_left + map_width:
-            commands.append(_pdf_text(x - 14, map_bottom - 12, f"{value:.0f} E", 6))
-    for value in _grid_values(ymin, ymax, interval):
-        _, y = transform(xmin, value)
-        if map_bottom <= y <= map_bottom + map_height:
-            commands.append(_pdf_text(map_left + 3, y + 2, f"{value:.0f} N", 6))
-    return commands
-
-
-def _scale_bar_commands(x: float, y: float, map_span_metres: float, scale: float) -> list[str]:
-    distance = _nice_distance(map_span_metres / 5)
-    width = distance * scale
-    segment_width = width / 4
-    commands = ["0 0 0 RG", "0.5 w"]
-    for index in range(4):
-        fill = "0 0 0 rg" if index % 2 == 0 else "1 1 1 rg"
-        commands.append(
-            f"{fill} {x + index * segment_width:.2f} {y:.2f} {segment_width:.2f} 7 re B"
-        )
-    commands.append(_pdf_text(x, y - 10, "0", 6))
-    commands.append(_pdf_text(x + width - 10, y - 10, _format_distance(distance), 6))
-    return commands
-
-
-def _north_arrow_commands(x: float, y: float) -> list[str]:
-    return [
-        _pdf_text(x - 4, y + 34, "N", 12),
-        "0 0 0 rg 0 0 0 RG",
-        f"{x:.2f} {y + 28:.2f} m {x - 7:.2f} {y:.2f} l {x:.2f} {y + 7:.2f} l "
-        f"{x + 7:.2f} {y:.2f} l h f",
-    ]
-
-
-def _format_distance(distance_metres: float) -> str:
-    if distance_metres >= 1000:
-        value = distance_metres / 1000
-        return f"{value:g} km"
-    return f"{distance_metres:g} m"
-
-
-def _wrap_map_label(text: str, *, width: int) -> list[str]:
-    if width < 1:
-        raise ValueError("map label width must be positive")
-    return [text[index : index + width] for index in range(0, len(text), width)] or [""]
-
-
-def _pdf_text(x: float, y: float, text: str, size: float) -> str:
-    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    return f"BT /F1 {size:g} Tf {x:.2f} {y:.2f} Td ({escaped}) Tj ET"
-
-
-def _write_simple_pdf(path: Path, lines: list[str]) -> Path:
-    text_lines = ["BT", "/F1 12 Tf", "72 760 Td"]
-    for i, line in enumerate(lines):
-        if i:
-            text_lines.append("0 -20 Td")
-        escaped = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        text_lines.append(f"({escaped}) Tj")
-    text_lines.append("ET")
-    return _write_pdf_stream(
-        path,
-        "\n".join(text_lines).encode("ascii", errors="replace"),
-        page_width=612,
-        page_height=792,
-    )
-
-
-def _write_pdf_stream(
-    path: Path,
-    stream: bytes,
-    *,
-    page_width: float,
-    page_height: float,
-) -> Path:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        (
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {page_width:g} {page_height:g}] ".encode()
-            + b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        title="Phase 1 Master GIS Index Map",
+        subtitle=(
+            f"{ctx.config.project.project_code} / {ctx.config.project.name} - "
+            f"{ctx.config.project.license_code}"
         ),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length "
-        + str(len(stream)).encode("ascii")
-        + b" >>\nstream\n"
-        + stream
-        + b"\nendstream",
-    ]
-    chunks = [b"%PDF-1.4\n"]
-    offsets = []
-    for idx, obj in enumerate(objects, start=1):
-        offsets.append(sum(len(c) for c in chunks))
-        chunks.append(f"{idx} 0 obj\n".encode("ascii"))
-        chunks.append(obj)
-        chunks.append(b"\nendobj\n")
-    xref_offset = sum(len(c) for c in chunks)
-    chunks.append(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-    chunks.append(b"0000000000 65535 f \n")
-    for offset in offsets:
-        chunks.append(f"{offset:010d} 00000 n \n".encode("ascii"))
-    chunks.append(
-        (
-            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{xref_offset}\n%%EOF\n"
-        ).encode("ascii")
+        crs_label=ctx.config.crs.target_authority,
+        run_id=ctx.run_id,
+        layers=(
+            pdf_map.MapLayer(
+                name="Project buffers",
+                geometries=tuple(buffers.geometry),
+                stroke=(0.45, 0.45, 0.45),
+                line_width=0.7,
+                dashed=True,
+            ),
+            pdf_map.MapLayer(
+                name="Licence boundary",
+                geometries=tuple(boundary.geometry),
+                stroke=(0.75, 0.05, 0.05),
+                fill=(0.96, 0.83, 0.83),
+                line_width=1.6,
+            ),
+        ),
+        notes=(
+            f"Buffers: {buffer_labels}.",
+            f"Source: input #{ctx.config.boundary.input_no}, {boundary_source}.",
+        ),
+        footer="Deterministic project index - administrative context only; not geological evidence.",
     )
-    path.write_bytes(b"".join(chunks))
-    return path
 
 
 PHASE = Phase01DataAudit
