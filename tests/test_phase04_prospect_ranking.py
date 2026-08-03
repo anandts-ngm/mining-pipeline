@@ -285,6 +285,7 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
         (pdir / "05_A_B_C_D_Field_Priority").glob("*Preliminary_Prospect_Ranking_Map.pdf")
     )
     assert b"legacy comparator" in ranking_map.read_bytes()
+    assert b"remained class D" in ranking_map.read_bytes()
 
     # the three desktop-unavailable criteria are recorded as data gaps
     gap = next((pdir / "04_Confidence_DataGap_NextAction").glob("*DataGap_and_NextAction*.xlsx"))

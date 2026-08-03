@@ -919,6 +919,11 @@ class Phase04ProspectRanking(Phase):
             )
         notes = (
             "Fixed-grid legacy comparator; not the authoritative prospect-polygon workflow.",
+            (
+                "No A/B/C comparator prospect polygons were produced; all cells remained class D."
+                if not prospects
+                else f"Comparator prospect polygons produced: {len(prospects)}."
+            ),
             f"Data gaps scored zero: {', '.join(self._data_gaps) or 'none'}.",
             "A/B/C classes are review signals, not mineralization or field-work approval.",
         )
