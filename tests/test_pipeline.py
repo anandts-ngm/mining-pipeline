@@ -929,6 +929,56 @@ def test_compatibility_promotion_is_idempotent_for_one_sealed_phase(raw_archive)
         assert (promoted / relative).is_file()
 
 
+def test_compatibility_promotion_ignores_short_lived_unsealed_files(raw_archive, monkeypatch):
+    from buduunkhad.core import run_storage
+    from buduunkhad.core.run_storage import RunLayout, promote_phase_to_current
+
+    config, register, _raw = raw_archive
+    manifest = run_pipeline(config, register, only=["00"], dry_run=False)
+    phase = manifest.phases[0]
+    layout = RunLayout(config.runs_root, manifest.run_id)
+    transient = layout.sealed_phase("00") / "overview.tif.ovr.tmp"
+    original_verify = run_storage.verify_sealed_artifacts
+    original_copy = run_storage.shutil.copy2
+    verification_count = 0
+
+    def verify_with_transient(*args, **kwargs):
+        nonlocal verification_count
+        verification_count += 1
+        if verification_count == 1:
+            original_verify(*args, **kwargs)
+            transient.write_bytes(b"temporary GDAL overview")
+            return None
+        transient.unlink(missing_ok=True)
+        return original_verify(*args, **kwargs)
+
+    def copy_with_disappearing_transient(source, destination, *args, **kwargs):
+        source_path = Path(source)
+        if source_path.name.endswith(".tmp"):
+            source_path.unlink(missing_ok=True)
+        return original_copy(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(run_storage, "verify_sealed_artifacts", verify_with_transient)
+    monkeypatch.setattr(run_storage.shutil, "copy2", copy_with_disappearing_transient)
+
+    promoted = promote_phase_to_current(
+        layout,
+        "00",
+        config.output_root,
+        phase.sealed_files,
+    )
+
+    assert verification_count == 2
+    assert not transient.exists()
+    assert not (promoted / transient.name).exists()
+    assert {
+        path.relative_to(promoted).as_posix() for path in promoted.rglob("*") if path.is_file()
+    } == {
+        Path(artifact.path).relative_to("phases", "00").as_posix()
+        for artifact in phase.sealed_files
+    }
+
+
 def test_compatibility_promotion_restores_previous_view_on_metadata_failure(
     raw_archive, monkeypatch
 ):

@@ -639,18 +639,38 @@ def promote_phase_to_current(
     temporary = root / f".promote-{phase_id}-{uuid.uuid4().hex}"
     backup = root / f".previous-{phase_id}-{uuid.uuid4().hex}"
     try:
-        shutil.copytree(source, temporary, copy_function=shutil.copy2)
+        temporary.mkdir()
+        prefix = Path("phases") / phase_id
+        expected_copies: set[str] = set()
         for artifact in artifact_tuple:
-            prefix = Path("phases") / phase_id
             relative = Path(artifact.path).relative_to(prefix)
+            source_file = require_regular_file_under(
+                source,
+                source / relative,
+                description="sealed compatibility source artifact",
+            )
+            target = temporary / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_file, target)
             copied = require_regular_file_under(
-                temporary, temporary / relative, description="promoted compatibility artifact"
+                temporary, target, description="promoted compatibility artifact"
             )
             if (
                 copied.stat().st_size != artifact.size_bytes
                 or sha256_file(copied) != artifact.sha256
             ):
                 raise RunStorageError(f"compatibility promotion changed bytes: {artifact.path}")
+            expected_copies.add(relative.as_posix())
+        observed_copies = {
+            path.relative_to(temporary).as_posix()
+            for path in temporary.rglob("*")
+            if path.is_file()
+        }
+        if observed_copies != expected_copies:
+            raise RunStorageError("compatibility promotion produced an unexpected file inventory")
+        # Re-check after copying so a concurrent mutation of any sealed artifact fails before
+        # the compatibility view can be installed. Unlisted transient files are never copied.
+        verify_sealed_artifacts(layout, artifact_tuple)
         if destination.exists():
             os.replace(destination, backup)
         try:
