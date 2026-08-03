@@ -52,7 +52,11 @@ from buduunkhad.geospatial_ai.tiles import (
 
 PreparedProvider = Literal["disabled", "openai", "anthropic"]
 PreparedReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+PreparedReasoningMode = Literal["standard", "pro"]
+PreparedTextVerbosity = Literal["low", "medium", "high"]
 _REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
+_REASONING_MODES = frozenset({"standard", "pro"})
+_TEXT_VERBOSITIES = frozenset({"low", "medium", "high"})
 
 _PROMPTS: dict[TaskType, tuple[str, str]] = {
     TaskType.LEGEND_EXTRACTION: ("vertical.legend-extraction", "1.1.0"),
@@ -79,6 +83,10 @@ def prepare_request_package(
     provider: PreparedProvider = "disabled",
     model: str | None = None,
     reasoning_effort: PreparedReasoningEffort | None = None,
+    reasoning_mode: PreparedReasoningMode | None = None,
+    text_verbosity: PreparedTextVerbosity | None = None,
+    store_response: bool | None = None,
+    context_parameters: tuple[NamedJSONValue, ...] = (),
     tile_parameters: TileParameters | None = None,
     egress: EgressDecision | None = None,
     phase_id: str = "03",
@@ -94,16 +102,27 @@ def prepare_request_package(
         raise RequestPackageError(f"unsupported provider selection: {provider}")
     if provider == "disabled" and model is not None:
         raise RequestPackageError("disabled provider cannot define a model")
-    if provider != "openai" and reasoning_effort is not None:
-        raise RequestPackageError("reasoning effort is supported only for OpenAI preparation")
+    openai_controls = (reasoning_effort, reasoning_mode, text_verbosity, store_response)
+    if provider != "openai" and any(value is not None for value in openai_controls):
+        raise RequestPackageError("OpenAI request controls require OpenAI preparation")
     if reasoning_effort is not None and reasoning_effort not in _REASONING_EFFORTS:
         raise RequestPackageError(f"unsupported OpenAI reasoning effort: {reasoning_effort}")
+    if reasoning_mode is not None and reasoning_mode not in _REASONING_MODES:
+        raise RequestPackageError(f"unsupported OpenAI reasoning mode: {reasoning_mode}")
+    if text_verbosity is not None and text_verbosity not in _TEXT_VERBOSITIES:
+        raise RequestPackageError(f"unsupported OpenAI text verbosity: {text_verbosity}")
     if provider != "disabled" and (not model or not model.strip()):
         raise RequestPackageError("live-provider preparation requires a model name")
     if provider == "openai" and reasoning_effort is None:
         raise RequestPackageError("OpenAI preparation requires an explicit reasoning effort")
     if task_type is TaskType.FEATURE_CRITIQUE and subject is None:
         raise RequestPackageError("independent critique preparation requires a subject identity")
+    reserved_context_names = {"tile_height", "tile_overlap", "tile_width"}
+    context_names = [item.name for item in context_parameters]
+    if len(context_names) != len(set(context_names)):
+        raise RequestPackageError("bound context parameter names must be unique")
+    if reserved_context_names.intersection(context_names):
+        raise RequestPackageError("bound context cannot replace tile parameters")
     if egress is not None and egress.status is EgressDecisionStatus.APPROVED:
         raise RequestPackageError("egress approval must be recorded after package inspection")
     timestamp = now or datetime.now(UTC)
@@ -187,6 +206,36 @@ def prepare_request_package(
                 )
                 if reasoning_effort is not None
                 else ()
+            )
+            + (
+                (
+                    NamedJSONValue(
+                        name="reasoning_mode",
+                        value=CanonicalJSONValue.from_value(reasoning_mode),
+                    ),
+                )
+                if reasoning_mode is not None
+                else ()
+            )
+            + (
+                (
+                    NamedJSONValue(
+                        name="text_verbosity",
+                        value=CanonicalJSONValue.from_value(text_verbosity),
+                    ),
+                )
+                if text_verbosity is not None
+                else ()
+            )
+            + (
+                (
+                    NamedJSONValue(
+                        name="store_response",
+                        value=CanonicalJSONValue.from_value(store_response),
+                    ),
+                )
+                if store_response is not None
+                else ()
             ),
         ),
         interpretation_parameters=(
@@ -202,7 +251,8 @@ def prepare_request_package(
                 name="tile_width",
                 value=CanonicalJSONValue.from_value(tile_manifest.tile_width),
             ),
-        ),
+        )
+        + context_parameters,
         subject=subject,
     )
     fingerprint = request_fingerprint(preliminary)

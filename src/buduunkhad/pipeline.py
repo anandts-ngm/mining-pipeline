@@ -1515,8 +1515,10 @@ def _write_manifest(layout: RunLayout, manifest: RunManifest) -> Path:
 
 def load_project(
     config_path: Path | str = "config/project.yaml",
+    *,
+    ai_config_path: Path | str | None = None,
 ) -> tuple[ProjectConfig, list[InputRecord]]:
     """Convenience loader returning ``(config, register)``."""
-    config = load_config(config_path)
+    config = load_config(config_path, ai_config_path=ai_config_path)
     register = load_register(config.register_path)
     return config, register

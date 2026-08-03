@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -57,6 +58,7 @@ def test_ai_help_is_additive_and_keeps_execution_steps_separate() -> None:
     assert phase03.exit_code == 0
     assert "import-ai-draft" in phase03.stdout
     assert "promote-reviewed" in phase03.stdout
+    assert "run-ai-first" in phase03.stdout
 
 
 def test_list_and_info_preserve_legacy_contract(project) -> None:
@@ -91,6 +93,34 @@ def test_run_dry_run_uses_legacy_defaults(project) -> None:
     assert "05  dry-run" in result.stdout
 
 
+def test_run_automatically_loads_a_sibling_ai_profile(project, monkeypatch) -> None:
+    _config, _register, work = project
+    config_path = work / "config" / "project.yaml"
+    shutil.copy(Path("config/ai.openai.yaml"), config_path.with_name("ai.openai.yaml"))
+    captured = {}
+
+    def fake_run(config, register, **kwargs):  # noqa: ARG001
+        captured["ai"] = config.ai
+        return RunManifest(
+            run_id="synthetic-ai-sidecar",
+            started_at="2026-08-03T00:00:00+00:00",
+            dry_run=True,
+            override=False,
+            selected_phases=["00"],
+        )
+
+    monkeypatch.setattr("buduunkhad.cli.run_pipeline", fake_run)
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--dry-run", "--only", "00"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["ai"].enabled is True
+    assert captured["ai"].provider_model == "gpt-5.6-sol"
+    assert captured["ai"].phase03_workflow is not None
+
+
 def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     run_help = runner.invoke(app, ["run", "--help"])
     phase_help = runner.invoke(app, ["phase04", "--help"])
@@ -102,6 +132,7 @@ def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     assert "--input-run" in phase_help_text
     assert "--phase-mode" in run_help_text
     assert "--execution-mode" in phase_help_text
+    assert "--ai-config" in run_help_text
     assert "--authorization" in run_help_text
     assert "--authorization" in phase_help_text
     assert "Retired" in run_help_text
@@ -270,7 +301,10 @@ def test_controlled_gate_stop_still_curates_results(project, monkeypatch) -> Non
     monkeypatch.setattr("buduunkhad.cli.run_pipeline", lambda *args, **kwargs: manifest)
     monkeypatch.setattr("buduunkhad.cli._curate_and_upload_results", fake_curate)
 
-    result = runner.invoke(app, ["run", "--config", str(config_path), "--only", "03"])
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "03", "--offline-ai"],
+    )
 
     assert result.exit_code == 0, result.output
     assert "Stopped at phase 03" in result.output

@@ -183,6 +183,21 @@ class ReasoningEffort(StrEnum):
     MAX = "max"
 
 
+class ReasoningMode(StrEnum):
+    """Explicit OpenAI Responses API reasoning mode."""
+
+    STANDARD = "standard"
+    PRO = "pro"
+
+
+class TextVerbosity(StrEnum):
+    """OpenAI Responses API text verbosity."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class SourceEgressPolicy(StrEnum):
     """Policy applied before any source preview can leave the local machine."""
 
@@ -249,14 +264,48 @@ class AIReviewPolicyConfig(_ValidatedAIConfigModel):
     production_geometry_requires_approval: bool = True
 
 
+class AIPhase03WorkflowConfig(_ValidatedAIConfigModel):
+    """Exact Phase 03 sources and bounded request settings for an AI-first run."""
+
+    legend_source: str
+    feature_source: str
+    legend_tile_size: int = Field(default=4096, ge=256, le=8192)
+    legend_overlap: int = Field(default=256, ge=0)
+    feature_tile_size: int = Field(default=1536, ge=256, le=4096)
+    feature_overlap: int = Field(default=128, ge=0)
+    legend_estimated_cost_usd: Decimal = Field(default=Decimal("2"), gt=0)
+    feature_estimated_cost_usd: Decimal = Field(default=Decimal("5"), gt=0)
+    critique_estimated_cost_usd: Decimal = Field(default=Decimal("4"), gt=0)
+
+    @field_validator("legend_source", "feature_source")
+    @classmethod
+    def _portable_snapshot_path(cls, value: str) -> str:
+        normalized = value.strip()
+        path = Path(normalized)
+        if not normalized or path.is_absolute() or "\\" in normalized or ".." in path.parts:
+            raise ValueError("AI Phase 03 sources must be portable paths below the snapshot root")
+        return path.as_posix()
+
+    @model_validator(mode="after")
+    def _valid_tile_overlap(self) -> AIPhase03WorkflowConfig:
+        if self.legend_overlap >= self.legend_tile_size:
+            raise ValueError("legend tile overlap must be smaller than the tile size")
+        if self.feature_overlap >= self.feature_tile_size:
+            raise ValueError("feature tile overlap must be smaller than the tile size")
+        return self
+
+
 class AIConfig(_ValidatedAIConfigModel):
-    """AI execution settings; construction remains keyless and offline by default."""
+    """AI execution settings; credentials remain external to persisted configuration."""
 
     profile: ExecutionProfile = ExecutionProfile.LEGACY
     enabled: bool = False
     provider: AIProviderSelection = AIProviderSelection.DISABLED
     provider_model: str | None = None
     reasoning_effort: ReasoningEffort | None = None
+    reasoning_mode: ReasoningMode | None = None
+    text_verbosity: TextVerbosity | None = None
+    store_responses: bool | None = None
     external_data_allowed: bool = False
     request_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     max_output_tokens: int = Field(default=4096, ge=1)
@@ -265,6 +314,7 @@ class AIConfig(_ValidatedAIConfigModel):
     concurrency: int = Field(default=1, ge=1)
     source_egress_policy: SourceEgressPolicy = SourceEgressPolicy.DENY
     review_policy: AIReviewPolicyConfig = Field(default_factory=AIReviewPolicyConfig)
+    phase03_workflow: AIPhase03WorkflowConfig | None = None
 
     @model_validator(mode="after")
     def _execution_policy(self) -> AIConfig:
@@ -294,10 +344,21 @@ class AIConfig(_ValidatedAIConfigModel):
                 raise ValueError("enabled live AI requires explicit source-egress approval")
         elif self.external_data_allowed:
             raise ValueError("external data cannot be allowed while AI is disabled")
-        if self.reasoning_effort is not None and self.provider is not AIProviderSelection.OPENAI:
-            raise ValueError("reasoning_effort is supported only by the OpenAI provider")
+        openai_only = (
+            self.reasoning_effort,
+            self.reasoning_mode,
+            self.text_verbosity,
+            self.store_responses,
+        )
+        if (
+            any(value is not None for value in openai_only)
+            and self.provider is not AIProviderSelection.OPENAI
+        ):
+            raise ValueError("OpenAI request controls are supported only by the OpenAI provider")
         if self.provider is AIProviderSelection.DISABLED and self.provider_model is not None:
             raise ValueError("disabled provider cannot define provider_model")
+        if self.phase03_workflow is not None and self.profile is not ExecutionProfile.AI_FIRST:
+            raise ValueError("automatic Phase 03 AI workflow requires the ai-first profile")
         if not all(
             (
                 self.review_policy.require_named_reviewer,

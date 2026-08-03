@@ -65,6 +65,7 @@ class EvidenceManifestError(ValueError):
 class EvidenceSourceKind(StrEnum):
     PIPELINE_RUN = "pipeline-run-v2"
     PHASE03_PROMOTION = "phase03-promotion-v1"
+    LOCAL_INTAKE = "local-intake-v1"
 
 
 class EvidenceOrigin(StrEnum):
@@ -255,7 +256,8 @@ class EvidenceRecord(_StrictModel):
             raise ValueError("the Phase 04 comparator accepts only implemented manifest roles")
         if (
             "03" in self.eligible_phases
-            and self.source_kind is EvidenceSourceKind.PIPELINE_RUN
+            and self.source_kind
+            in {EvidenceSourceKind.PIPELINE_RUN, EvidenceSourceKind.LOCAL_INTAKE}
             and (
                 self.target_layer_name is None
                 or not phase03_target_accepts(self.target_layer_name, self.evidence_role)
@@ -601,6 +603,8 @@ class EvidenceAuthorityResolver:
             self._load_catalog()
 
     def _resolve_record(self, record: EvidenceRecord) -> Path:
+        if record.source_kind is EvidenceSourceKind.LOCAL_INTAKE:
+            return self._resolve_local_intake(record)
         run = RunLayout(self.runs_root, record.source_run_id)
         run_directory = run.run_dir
         if run_directory.name != record.source_run_id:
@@ -629,6 +633,61 @@ class EvidenceAuthorityResolver:
             self._verify_pipeline_source(run, authority, artifact, record)
         else:
             self._verify_phase03_promotion(run, authority, artifact, record)
+        self._verify_layer(artifact, record.layer_name)
+        return artifact
+
+    def _resolve_local_intake(self, record: EvidenceRecord) -> Path:
+        """Resolve a copied local GIS source through its immutable intake authority."""
+
+        from buduunkhad.core.local_evidence_intake import LocalEvidenceIntakeAuthority
+
+        try:
+            authority = require_regular_file_under(
+                self.evidence_root,
+                self.evidence_root / Path(record.source_authority_path),
+                description="local evidence intake authority",
+            )
+            artifact = require_regular_file_under(
+                self.evidence_root,
+                self.evidence_root / Path(record.artifact_path),
+                description="local evidence intake artifact",
+            )
+        except ArtifactSealError as exc:
+            raise EvidenceManifestError(str(exc)) from exc
+        if sha256_file(authority) != record.source_authority_sha256:
+            raise EvidenceManifestError("local evidence intake authority bytes changed")
+        if (
+            artifact.stat().st_size != record.artifact_size_bytes
+            or sha256_file(artifact) != record.artifact_sha256
+        ):
+            raise EvidenceManifestError("local evidence intake artifact bytes changed")
+        try:
+            intake = LocalEvidenceIntakeAuthority.model_validate(_load_json_object(authority))
+        except ValueError as exc:
+            raise EvidenceManifestError("local evidence intake authority is invalid") from exc
+        if (
+            intake.intake_id != record.source_run_id
+            or intake.authority_relative_path != record.source_authority_path
+            or intake.artifact_relative_path != record.artifact_path
+            or intake.artifact_sha256 != record.artifact_sha256
+            or intake.artifact_size_bytes != record.artifact_size_bytes
+            or intake.artifact_layer != record.layer_name
+        ):
+            raise EvidenceManifestError("local evidence record differs from its intake authority")
+        for source in intake.source_files:
+            try:
+                source_path = require_regular_file_under(
+                    self.evidence_root,
+                    self.evidence_root / Path(source.relative_path),
+                    description="local evidence intake source",
+                )
+            except ArtifactSealError as exc:
+                raise EvidenceManifestError(str(exc)) from exc
+            if (
+                source_path.stat().st_size != source.size_bytes
+                or sha256_file(source_path) != source.sha256
+            ):
+                raise EvidenceManifestError("local evidence intake source bytes changed")
         self._verify_layer(artifact, record.layer_name)
         return artifact
 

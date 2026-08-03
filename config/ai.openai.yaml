@@ -3,10 +3,13 @@ ai:
   enabled: true
   provider: openai
   provider_model: gpt-5.6-sol
-  reasoning_effort: high
+  reasoning_effort: xhigh
+  reasoning_mode: pro
+  text_verbosity: medium
+  store_responses: false
   external_data_allowed: true
-  request_timeout_seconds: 900
-  max_output_tokens: 65536
+  request_timeout_seconds: 3600
+  max_output_tokens: 128000
   max_requests_per_run: 4
   max_cost_per_run_usd: "20.00"
   concurrency: 1
@@ -15,3 +18,14 @@ ai:
     require_named_reviewer: true
     high_risk_requires_geologist: true
     production_geometry_requires_approval: true
+  phase03_workflow:
+    # Analyze the legend once rather than resending it with every georeferenced map tile.
+    legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-74-A_GeologicalMap_Legend_1-50000_v01_raw-scan.jpg
+    feature_source: XV023222_Buduunkhad_2013_L47-74-A_GeologicalMap_1-50000_Georeferenced_EPSG32647_v01.tif
+    legend_tile_size: 4096
+    legend_overlap: 256
+    feature_tile_size: 1536
+    feature_overlap: 128
+    legend_estimated_cost_usd: "2.00"
+    feature_estimated_cost_usd: "5.00"
+    critique_estimated_cost_usd: "4.00"

@@ -24,7 +24,9 @@ from buduunkhad.config import (
     AIProviderSelection,
     ExecutionProfile,
     ReasoningEffort,
+    ReasoningMode,
     SourceEgressPolicy,
+    TextVerbosity,
 )
 from buduunkhad.geospatial_ai.ledger import AIJobLedger, LedgerStatus
 from buduunkhad.geospatial_ai.manifests import (
@@ -58,10 +60,16 @@ def execute_request_package(
     package_directory = roots.assert_run_artifact(package_directory)
     package = load_request_package(package_directory)
     prepared_reasoning_effort = _prepared_reasoning_effort(package)
+    prepared_reasoning_mode = _prepared_reasoning_mode(package)
+    prepared_text_verbosity = _prepared_text_verbosity(package)
+    prepared_store_response = _prepared_store_response(package)
     _validate_execution_policy(
         package.request.provider.provider,
         package.request.provider.model,
         prepared_reasoning_effort,
+        prepared_reasoning_mode,
+        prepared_text_verbosity,
+        prepared_store_response,
         config,
     )
     if package.egress.status is not EgressDecisionStatus.APPROVED:
@@ -90,6 +98,9 @@ def execute_request_package(
         reasoning_effort=(
             config.reasoning_effort.value if config.reasoning_effort is not None else None
         ),
+        reasoning_mode=(config.reasoning_mode.value if config.reasoning_mode is not None else None),
+        text_verbosity=(config.text_verbosity.value if config.text_verbosity is not None else None),
+        store_response=config.store_responses,
         system_prompt=components["system"],
         user_prompt=_execution_user_prompt(package, components["user"]),
         output_schema=package.output_schema_json,
@@ -176,6 +187,9 @@ def _validate_execution_policy(
     provider: str,
     model: str,
     prepared_reasoning_effort: ReasoningEffort | None,
+    prepared_reasoning_mode: ReasoningMode | None,
+    prepared_text_verbosity: TextVerbosity | None,
+    prepared_store_response: bool | None,
     config: AIConfig,
 ) -> None:
     if not config.enabled:
@@ -188,6 +202,12 @@ def _validate_execution_policy(
         raise LiveExecutionError("prepared provider/model differs from current configuration")
     if prepared_reasoning_effort != config.reasoning_effort:
         raise LiveExecutionError("prepared reasoning effort differs from current configuration")
+    if prepared_reasoning_mode != config.reasoning_mode:
+        raise LiveExecutionError("prepared reasoning mode differs from current configuration")
+    if prepared_text_verbosity != config.text_verbosity:
+        raise LiveExecutionError("prepared text verbosity differs from current configuration")
+    if prepared_store_response != config.store_responses:
+        raise LiveExecutionError("prepared response-storage policy differs from configuration")
     if not config.external_data_allowed:
         raise LiveExecutionError("external data egress is disabled")
     if config.source_egress_policy is not SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL:
@@ -210,6 +230,47 @@ def _prepared_reasoning_effort(
         return ReasoningEffort(raw)
     except ValueError as exc:
         raise LiveExecutionError("prepared reasoning effort is unsupported") from exc
+
+
+def _prepared_reasoning_mode(package: RequestPackageManifest) -> ReasoningMode | None:
+    raw = _prepared_provider_value(package, "reasoning_mode")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise LiveExecutionError("prepared reasoning mode is malformed")
+    try:
+        return ReasoningMode(raw)
+    except ValueError as exc:
+        raise LiveExecutionError("prepared reasoning mode is unsupported") from exc
+
+
+def _prepared_text_verbosity(package: RequestPackageManifest) -> TextVerbosity | None:
+    raw = _prepared_provider_value(package, "text_verbosity")
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise LiveExecutionError("prepared text verbosity is malformed")
+    try:
+        return TextVerbosity(raw)
+    except ValueError as exc:
+        raise LiveExecutionError("prepared text verbosity is unsupported") from exc
+
+
+def _prepared_store_response(package: RequestPackageManifest) -> bool | None:
+    raw = _prepared_provider_value(package, "store_response")
+    if raw is None:
+        return None
+    if not isinstance(raw, bool):
+        raise LiveExecutionError("prepared response-storage policy is malformed")
+    return raw
+
+
+def _prepared_provider_value(package: RequestPackageManifest, name: str) -> object:
+    values = {
+        parameter.name: parameter.value.to_python()
+        for parameter in package.request.provider.parameters
+    }
+    return values.get(name)
 
 
 def _provider(selection: AIProviderSelection) -> AIProvider:

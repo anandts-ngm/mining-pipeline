@@ -140,6 +140,9 @@ def _call(provider: str) -> ProviderCall:
         provider=cast(Literal["openai", "anthropic"], provider),
         model="synthetic-model",
         reasoning_effort="high" if provider == "openai" else None,
+        reasoning_mode="pro" if provider == "openai" else None,
+        text_verbosity="medium" if provider == "openai" else None,
+        store_response=False if provider == "openai" else None,
         system_prompt="Return structured test data.",
         user_prompt="Read the synthetic image.",
         output_schema=CanonicalJSONValue.from_value(SampleOutput.model_json_schema()),
@@ -224,11 +227,16 @@ def test_openai_injected_client_executes_without_sdk_or_key(
     assert result.usage == AIUsage(input_tokens=7, output_tokens=3, requests=1)
     assert responses.arguments is not None
     assert responses.arguments["model"] == "synthetic-model"
-    assert responses.arguments["reasoning"] == {"effort": "high"}
+    assert responses.arguments["reasoning"] == {"effort": "high", "mode": "pro"}
+    text = cast(dict[str, object], responses.arguments["text"])
+    assert text["verbosity"] == "medium"
+    assert responses.arguments["store"] is False
     request_input = responses.arguments["input"]
     assert isinstance(request_input, list)
     content = request_input[0]["content"]  # ty: ignore[not-subscriptable]
     assert any("tile-1" in item.get("text", "") for item in content)
+    image = next(item for item in content if item.get("type") == "input_image")
+    assert image["detail"] == "original"
 
 
 @pytest.mark.parametrize(

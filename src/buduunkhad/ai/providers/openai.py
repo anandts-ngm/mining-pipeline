@@ -56,28 +56,37 @@ class OpenAIProvider:
                 {
                     "type": "input_image",
                     "image_url": f"data:{image.media_type};base64,{encoded}",
+                    "detail": image.detail,
                 }
             )
         execution_failed = False
         try:
-            reasoning = (
-                {"effort": call.reasoning_effort} if call.reasoning_effort is not None else None
-            )
+            reasoning = {
+                key: value
+                for key, value in (
+                    ("effort", call.reasoning_effort),
+                    ("mode", call.reasoning_mode),
+                )
+                if value is not None
+            }
+            text = {
+                "format": {
+                    "type": "json_schema",
+                    "name": "buduunkhad_geospatial_output",
+                    "schema": _strict_output_schema(call.output_schema.to_python()),
+                    "strict": True,
+                },
+                **({"verbosity": call.text_verbosity} if call.text_verbosity is not None else {}),
+            }
             response = client.responses.create(
                 model=call.model,
                 instructions=call.system_prompt,
                 input=[{"role": "user", "content": content}],
-                text={
-                    "format": {
-                        "type": "json_schema",
-                        "name": "buduunkhad_geospatial_output",
-                        "schema": _strict_output_schema(call.output_schema.to_python()),
-                        "strict": True,
-                    }
-                },
+                text=text,
                 max_output_tokens=call.max_output_tokens,
                 timeout=call.timeout_seconds,
-                **({"reasoning": reasoning} if reasoning is not None else {}),
+                **({"reasoning": reasoning} if reasoning else {}),
+                **({"store": call.store_response} if call.store_response is not None else {}),
             )
         except Exception:  # SDK boundary: deliberately discard potentially sensitive details.
             execution_failed = True

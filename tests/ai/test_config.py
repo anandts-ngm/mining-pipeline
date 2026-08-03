@@ -12,6 +12,8 @@ from buduunkhad.config import (
     ExecutionProfile,
     ProjectConfig,
     ReasoningEffort,
+    ReasoningMode,
+    TextVerbosity,
     load_ai_config,
     load_config,
 )
@@ -41,12 +43,19 @@ def test_standalone_openai_profile_is_explicit_and_does_not_change_default() -> 
     assert ai.enabled is True
     assert ai.provider is AIProviderSelection.OPENAI
     assert ai.provider_model == "gpt-5.6-sol"
-    assert ai.reasoning_effort is ReasoningEffort.HIGH
+    assert ai.reasoning_effort is ReasoningEffort.XHIGH
+    assert ai.reasoning_mode is ReasoningMode.PRO
+    assert ai.text_verbosity is TextVerbosity.MEDIUM
+    assert ai.store_responses is False
     assert ai.external_data_allowed is True
-    assert ai.request_timeout_seconds == 900
-    assert ai.max_output_tokens == 65536
+    assert ai.request_timeout_seconds == 3600
+    assert ai.max_output_tokens == 128000
     assert ai.max_requests_per_run == 4
     assert ai.max_cost_per_run_usd == Decimal("20.00")
+    assert ai.phase03_workflow is not None
+    assert ai.phase03_workflow.legend_tile_size == 4096
+    assert ai.phase03_workflow.feature_tile_size == 1536
+    assert ai.phase03_workflow.critique_estimated_cost_usd == Decimal("4.00")
     assert config.ai == ai
     assert load_config(Path("config/project.yaml")).ai.profile is ExecutionProfile.LEGACY
 

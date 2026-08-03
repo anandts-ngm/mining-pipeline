@@ -11,6 +11,7 @@ buduunkhad phase00 / phase01 / ... --dry-run   # run a single phase
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -31,6 +32,7 @@ from buduunkhad.core.execution_policy import (
     ExecutionMode,
     ExecutionPolicyError,
 )
+from buduunkhad.core.local_evidence_intake import register_local_evidence
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.run_storage import RunStorageError
 from buduunkhad.pipeline import (
@@ -38,11 +40,14 @@ from buduunkhad.pipeline import (
     MissingRawDataError,
     PathTooLongError,
     SelectionError,
+    build_registry,
     load_project,
     run_pipeline,
+    select_phases,
     validate_raw_inputs,
 )
 from buduunkhad.readiness_cli import readiness_app
+from buduunkhad.runtime_env import LocalEnvError, load_repository_env
 
 # Run-start failures that should surface as a clean red message + non-zero exit.
 _RUN_ERRORS = (
@@ -490,6 +495,13 @@ def _parse_phase_mode_selectors(selectors: list[str] | None) -> dict[str, Execut
 @app.command("run")
 def run(
     config: Path = _CONFIG_OPT,
+    ai_config: Path | None = typer.Option(
+        None,
+        "--ai-config",
+        exists=True,
+        dir_okay=False,
+        help="AI profile; defaults to sibling ai.openai.yaml when that file exists.",
+    ),
     from_: str = typer.Option(None, "--from", help="First phase id (e.g. 00)."),
     to: str = typer.Option(None, "--to", help="Last phase id (e.g. 01)."),
     only: str = typer.Option(None, "--only", help="Comma-separated phase ids (e.g. 00,01)."),
@@ -531,11 +543,51 @@ def run(
         "--upload-results/--no-upload-results",
         help="After a real run, curate and upload outputs when an upload root is configured.",
     ),
+    offline_ai: bool = typer.Option(
+        False,
+        "--offline-ai",
+        help="Explicitly skip the configured AI-first Phase 03 provider workflow.",
+    ),
+    ai_approved_by: str | None = typer.Option(
+        None,
+        "--ai-approved-by",
+        envvar="BUDUUNKHAD_AI_EGRESS_APPROVER",
+        help="Named person authorizing the configured Phase 03 source package egress.",
+    ),
+    ai_approval_note: str = typer.Option(
+        "Run-scoped approval for the configured Phase 03 AI-first source packages.",
+        "--ai-approval-note",
+        help="Reason recorded in each exact package-level egress approval.",
+    ),
 ) -> None:
-    """Run the pipeline over the selected phases."""
-    cfg, register = load_project(config)
+    """Run deterministic phases and the configured Phase 03 AI-first workflow."""
+    try:
+        load_repository_env(config)
+    except LocalEnvError as exc:
+        typer.secho(f"Local environment error: {exc}", fg="red", err=True)
+        raise typer.Exit(2) from exc
+    ai_approved_by = ai_approved_by or os.environ.get("BUDUUNKHAD_AI_EGRESS_APPROVER")
+    resolved_ai_config = ai_config
+    if resolved_ai_config is None:
+        candidate = config.with_name("ai.openai.yaml")
+        if candidate.is_file():
+            resolved_ai_config = candidate
+    cfg, register = load_project(config, ai_config_path=resolved_ai_config)
     only_list = [s.strip() for s in only.split(",") if s.strip()] if only else None
     try:
+        selected = select_phases(build_registry(), from_=from_, to=to, only=only_list)
+        ai_selected = (
+            not dry_run
+            and not offline_ai
+            and cfg.ai.enabled
+            and cfg.ai.phase03_workflow is not None
+            and any(phase.id == "03" for phase in selected)
+        )
+        if ai_selected and not (ai_approved_by or "").strip():
+            raise SelectionError(
+                "AI-first Phase 03 requires --ai-approved-by or "
+                "BUDUUNKHAD_AI_EGRESS_APPROVER; use --offline-ai for an explicit offline run"
+            )
         input_runs = _parse_input_run_selectors(input_run)
         phase_modes = _parse_phase_mode_selectors(phase_mode)
         manifest = run_pipeline(
@@ -560,6 +612,35 @@ def run(
     if manifest.error:
         typer.secho(f"Run failed: {manifest.error}", fg="red", err=True)
         raise typer.Exit(2)
+    review_project: Path | None = None
+    review_packages: tuple[Path, ...] = ()
+    if ai_selected:
+        from buduunkhad.geospatial_ai.ai_first import run_phase03_ai_first
+
+        try:
+            ai_manifest_path, ai_manifest = run_phase03_ai_first(
+                cfg,
+                pipeline_run_id=manifest.run_id,
+                approved_by=cast(str, ai_approved_by),
+                approval_note=ai_approval_note,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            typer.secho(f"AI-first Phase 03 failed: {exc}", fg="red", err=True)
+            raise typer.Exit(2) from exc
+        run_directory = cfg.runs_root / ai_manifest.ai_run_id
+        review_project = run_directory / ai_manifest.integrated_project_path
+        review_packages = (run_directory / ai_manifest.review_package_path,)
+        typer.secho("AI-first Phase 03 completed.", fg="green")
+        typer.echo(f"AI attempt: {ai_manifest.ai_run_id}")
+        typer.echo(f"AI manifest: {ai_manifest_path}")
+        typer.echo(f"Integrated QGIS review: {review_project}")
+    elif (
+        not dry_run
+        and offline_ai
+        and cfg.ai.enabled
+        and any(phase.id == "03" for phase in selected)
+    ):
+        typer.secho("AI-first Phase 03 explicitly skipped by --offline-ai.", fg="yellow")
     if not manifest.dry_run and (
         cfg.results_mirror_root is not None or cfg.results_upload_root is not None
     ):
@@ -571,6 +652,8 @@ def run(
                 cfg,
                 run_id=manifest.run_id,
                 upload=upload_results,
+                review_project=review_project,
+                review_packages=review_packages,
             )
         except (ResultsUploadError, ResultsViewError) as exc:
             typer.secho(f"Automatic results upload failed after the run: {exc}", fg="red")
@@ -731,6 +814,63 @@ def register_run_layer_evidence(
         raise typer.Exit(2) from exc
     typer.echo(f"Registered sealed support evidence: {manifest.manifest_id}")
     typer.echo("This record does not claim scientific approval or Phase 04 authority.")
+
+
+@evidence_app.command("import-local-layer")
+def import_local_layer_evidence(
+    source: Path = typer.Option(..., "--source", help="Local GeoPackage or shapefile to copy."),
+    layer_name: str | None = typer.Option(
+        None, "--layer", help="Exact source layer; required for a multi-layer GeoPackage."
+    ),
+    role: str = typer.Option(..., "--role", help="Explicit evidence role."),
+    phase: list[str] = typer.Option(
+        ..., "--phase", help="Eligible phase ID (03 or 04; repeatable)."
+    ),
+    mode: list[str] = typer.Option(..., "--mode", help="Eligible execution mode (repeatable)."),
+    target_layer: str | None = typer.Option(
+        None, "--target-layer", help="Exact Phase 03 target layer, when applicable."
+    ),
+    origin: str = typer.Option(
+        EvidenceOrigin.HUMAN_DIGITIZED.value,
+        "--origin",
+        help="deterministic-pipeline or human-digitized.",
+    ),
+    evidence_id: str | None = typer.Option(None, "--evidence-id"),
+    actor: str = typer.Option(..., "--actor", help="Person registering this local evidence."),
+    reason: str = typer.Option(..., "--reason", help="Auditable registration reason."),
+    limitation: list[str] | None = typer.Option(
+        None, "--limitation", help="Evidence limitation (repeatable)."
+    ),
+    config: Path = _CONFIG_OPT,
+) -> None:
+    """Copy one local GIS layer into immutable evidence authority and register it."""
+
+    cfg, _register = load_project(config)
+    try:
+        if not phase or any(value not in {"03", "04"} for value in phase):
+            raise ValueError("eligible phases must contain only 03 or 04")
+        eligible_phases = cast(tuple[Literal["03", "04"], ...], tuple(phase))
+        manifest = register_local_evidence(
+            runs_root=cfg.runs_root,
+            evidence_root=cfg.evidence_root,
+            target_epsg=cfg.target_epsg,
+            source_path=source,
+            source_layer=layer_name,
+            evidence_role=EvidenceRole(role),
+            origin=EvidenceOrigin(origin),
+            eligible_phases=eligible_phases,
+            eligible_modes=tuple(EvidenceExecutionMode(value) for value in mode),
+            target_layer_name=target_layer,
+            evidence_id=evidence_id,
+            limitations=tuple(limitation or ()),
+            registered_by=actor,
+            registration_reason=reason,
+        )
+    except (EvidenceManifestError, ValueError) as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(2) from exc
+    typer.echo(f"Registered immutable local support evidence: {manifest.manifest_id}")
+    typer.echo("The source was copied; this record does not claim scientific approval.")
 
 
 # Register one command per phase: phase00, phase01, ... phase99.

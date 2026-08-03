@@ -57,6 +57,7 @@ class ProviderImage(FrozenModel):
     media_type: Literal["image/png", "image/jpeg"]
     sha256: str
     data: bytes
+    detail: Literal["auto", "low", "high", "original"] = "original"
 
     def model_post_init(self, _context: object) -> None:
         if hashlib.sha256(self.data).hexdigest() != self.sha256:
@@ -72,6 +73,9 @@ class ProviderCall(FrozenModel):
     provider: Literal["openai", "anthropic"]
     model: str
     reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] | None = None
+    reasoning_mode: Literal["standard", "pro"] | None = None
+    text_verbosity: Literal["low", "medium", "high"] | None = None
+    store_response: bool | None = None
     system_prompt: str
     user_prompt: str
     output_schema: CanonicalJSONValue

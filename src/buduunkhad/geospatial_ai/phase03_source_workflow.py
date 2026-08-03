@@ -23,6 +23,8 @@ from buduunkhad.geospatial_ai.path_safety import StorageRoots
 from buduunkhad.geospatial_ai.requests import (
     PreparedProvider,
     PreparedReasoningEffort,
+    PreparedReasoningMode,
+    PreparedTextVerbosity,
     load_request_package,
     prepare_request_package,
 )
@@ -195,6 +197,9 @@ def prepare_phase03_source_workflow(
     provider: PreparedProvider = "disabled",
     model: str | None = None,
     reasoning_effort: PreparedReasoningEffort | None = None,
+    reasoning_mode: PreparedReasoningMode | None = None,
+    text_verbosity: PreparedTextVerbosity | None = None,
+    store_response: bool | None = None,
     tile_parameters: TileParameters | None = None,
     estimated_cost_usd: Decimal = Decimal("0"),
     page_number: int = 1,
@@ -225,6 +230,9 @@ def prepare_phase03_source_workflow(
             provider=provider,
             model=model,
             reasoning_effort=reasoning_effort,
+            reasoning_mode=reasoning_mode,
+            text_verbosity=text_verbosity,
+            store_response=store_response,
             tile_parameters=tile_parameters,
             estimated_cost_usd=estimated_cost_usd,
             page_number=page_number,
