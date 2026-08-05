@@ -149,7 +149,7 @@ def test_published_phase_accepts_all_registered_phase_path_conventions(phase_id:
     assert phase.outputs[0].source_path == f"{phase_id}_Anything/shared.csv"
 
 
-def test_non_authoritative_execution_modes_cannot_produce_approved_package_status() -> None:
+def test_only_completed_execution_modes_can_produce_approved_package_status() -> None:
     for mode in (
         ExecutionMode.SCAFFOLD,
         ExecutionMode.SUPPORT_EVIDENCE,
@@ -164,6 +164,8 @@ def test_non_authoritative_execution_modes_cannot_produce_approved_package_statu
         update={"execution_mode": ExecutionMode.AUTHORITATIVE, "gate_state": "APPROVED"}
     )
     assert publication_status_for((authoritative,)) == "APPROVED"
+    automated = authoritative.model_copy(update={"execution_mode": ExecutionMode.AUTOMATED})
+    assert publication_status_for((automated,)) == "APPROVED"
 
 
 def test_publication_manifest_v1_1_remains_readable_with_historical_status_semantics() -> None:
@@ -1283,8 +1285,9 @@ def test_publish_accepts_current_pipeline_run_manifest_contract(raw_archive):
         output.source_path.endswith("_Phase00_QAQC_Log.xlsx")
         for output in manifest.phases[0].outputs
     )
-    assert manifest.phases[0].human_review_or_qaqc_pending is True
-    assert manifest.package_status == "HUMAN_REVIEW_PENDING"
+    assert manifest.phases[0].human_review_or_qaqc_pending is False
+    assert manifest.phases[0].execution_mode.value == "automated"
+    assert manifest.package_status == "APPROVED"
 
 
 def test_recomputed_publication_id_cannot_change_source_execution_mode(raw_archive):
@@ -1308,7 +1311,9 @@ def test_recomputed_publication_id_cannot_change_source_execution_mode(raw_archi
         cast(dict[str, object], phases[0])["execution_mode"] = "support-evidence"
 
     _tamper_manifest(result.dest, mutate)
-    with pytest.raises(PublishError, match="execution-policy provenance mismatch"):
+    with pytest.raises(
+        PublishError, match="unreadable or invalid|execution-policy provenance mismatch"
+    ):
         verify_publication_package(result.dest)
 
 

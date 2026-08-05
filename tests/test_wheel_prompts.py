@@ -185,7 +185,7 @@ assert len(discrepancies.unresolved()) == 0
 assert len(discrepancies.historical_unresolved()) == 23
 assert len(readiness.obligations) == 7
 assert phase02_processing.scientific_use == "support-evidence-only"
-assert phase04_migration.status == "implemented-inactive"
+assert phase04_migration.status == "retained-optional-review-workflow"
 print(prompt.identity.sha256)
 """
     result = subprocess.run(

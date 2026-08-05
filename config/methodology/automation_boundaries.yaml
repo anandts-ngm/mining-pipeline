@@ -10,11 +10,11 @@ boundaries:
     deterministic_authority:
       - SHA-256 checksums, raw identity, sidecar bundle detection, working-copy creation, inventory.
     human_review_boundary:
-      - Any change to raw identity or archive placement.
+      - Optional audit of deliberate raw-identity changes; deterministic identity failures still stop execution.
     ai_permitted:
       - Metadata enrichment suggestions as drafts.
     ai_prohibited:
-      - Changing raw identity or placement automatically.
+      - Fabricating source bytes, identifiers, hashes or archive membership.
     status: implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "01"
@@ -23,13 +23,12 @@ boundaries:
       - Spatial/raster audit, CRS checks, boundary import, buffer rings, master GeoPackage schema, QGIS project generation.
       - Any prior Phase 00 products are consumed from the same isolated run or an exact sealed predecessor-run binding, never the mutable compatibility view.
     human_review_boundary:
-      - Scan-map georeferencing acceptance (GCP residuals, registration QA/QC).
+      - Optional inspection of scan-map georeferencing and registration QA/QC; unavailable control evidence is recorded as a data gap.
     ai_permitted:
       - Map boundary, legend and tick extraction, GCP proposals, historical-feature proposals.
     ai_prohibited:
-      - Authoritative georeferencing or residual calculations.
-    blocking_dependencies:
-      - Expert GCP and grid-reading rules per scan series.
+      - Inventing GCPs, residuals, CRS evidence or source geometry.
+    blocking_dependencies: []
     status: implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "02"
@@ -38,14 +37,13 @@ boundaries:
       - Reprojection, per-product clipping, COG output, spectral band math, terrain derivatives, the frozen ASTER support-evidence chain, hydrology products, the machine lineament draft.
       - Prior Phase 00 and Phase 01 products resolve from the same run or exact sealed predecessor-run bindings.
     human_review_boundary:
-      - Interpretation of validated imagery; adoption of any new threshold or calculation.
+      - Optional specialist review of imagery interpretation and any proposed new threshold.
     ai_permitted:
       - Draft interpretations of validated imagery as support evidence.
     ai_prohibited:
       - Changing existing calculations or thresholds without an approved source and methodology record.
     blocking_dependencies:
-      - KOMPSAT local deterministic processing is permitted by METH-DISC-074, but METH-READY-002 still blocks provider egress and external publication; ASTER HDF remains dataset-blocked under METH-READY-003 while other Phase 02 products may proceed.
-      - Lineament and outcrop digitizing rules are expert inputs.
+      - KOMPSAT local deterministic processing is permitted by METH-DISC-074, but METH-READY-002 still blocks provider egress and external publication; an unavailable or invalid ASTER HDF is an explicit product-level data gap while other Phase 02 products proceed.
     status: implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "03"
@@ -55,33 +53,32 @@ boundaries:
       - Evidence roles must own their exact Phase 03 target layers, and catalog admission plus predecessor-run identities remain bound into the consuming run.
       - Source-specific and batch legend/feature execution, non-destructive overlap review, content-aware QA/QC, the exact eight-criterion 100-point 03A evidence/critique records and scientific-handoff resolution.
     human_review_boundary:
-      - Digitizing, georeferencing acceptance, the 03A deposit-model matrix, and every handoff review decision.
+      - Optional specialist correction of AI proposals, georeferencing and the 03A assessment; these reviews do not block automated output generation.
     ai_permitted:
       - Draft digitization, occurrence reconciliation, and deposit-model drafting through the review handoff.
     ai_prohibited:
-      - Scientific approval; automatic merge into legacy Phase 03 evidence.
+      - Inventing missing map observations, coordinates, source identities or geological facts.
       - Becoming executable merely through a filename, layer name, or directory location.
-    blocking_dependencies:
-      - Human-digitized layers and the completed 03A score matrix.
-      - METH-READY-004, METH-READY-005 and METH-READY-006 block scientific handoff and cannot be bypassed by a scoped operational exception; the generic runtime override is retired.
-    status: partially-implemented
+    blocking_dependencies: []
+    status: automated
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "04"
     automation_category: desktop-deterministic
     deterministic_authority:
       - Evidence grid, scoring arithmetic, class banding, prospect dissolution, ranking and go/no-go tables.
       - Attribute-bearing support evidence only when its exact artifact, layer, role and legacy-comparator eligibility resolve through an immutable evidence manifest.
-      - Phase 01 and Phase 03 inputs come from the same run or exact sealed predecessor-run bindings; a sealed Phase 03 support-evidence run whose deterministic QA/QC passes may supply the legacy comparator when its gate is blocked only by explicit pending human items.
-      - The Phase 03 scientific gate remains blocked and every comparator result remains provisional; this source bridge is not a scientific handoff or authoritative Phase 04 activation.
-      - A separate inactive prospect-polygon implementation measures reviewed geometry and applies only exact human score judgments after Phase 03 handoff and two-role activation.
+      - Phase 01 and Phase 03 inputs come from the same run or exact sealed predecessor-run bindings; automated execution records absent criteria as zero-scored data gaps.
+      - The fixed-grid workflow emits real candidate polygons and rankings; the previous legacy-comparator mode remains available only for regression compatibility.
+      - A separate optional prospect-polygon implementation can measure externally supplied reviewed geometry and scorecards when those inputs exist.
     human_review_boundary:
-      - Scoring-matrix changes; supply of the roads layer and the completed 03A model-fit source.
+      - Optional specialist correction or replacement of automated candidate geometry and score judgments.
+    ai_permitted:
+      - Prospect interpretation, evidence synthesis, rationale, limitations and ranking proposals from exact Phase 03 evidence.
     ai_prohibited:
-      - Consuming AI-lifecycle or handoff evidence without the approved authoritative adapter.
+      - Treating an absent criterion as positive or inventing geological observations.
       - Recalibrating the adopted scoring matrix as an incidental change.
-    blocking_dependencies:
-      - The master-aligned prospect-polygon target remains inactive under METH-READY-004 through METH-READY-007 until its exact handoff, calibration and reviews exist.
-    status: legacy-comparator
+    blocking_dependencies: []
+    status: automated
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "05"
     automation_category: field-acquisition

@@ -95,7 +95,7 @@ class MethodologyReadinessReport(BaseModel):
     obligations: tuple[ReadinessObligation, ...]
     missing_registered_inputs: tuple[MissingRegisteredInput, ...]
     phases: tuple[PhaseReadiness, ...]
-    phase04_target_status: Literal["implemented-inactive"]
+    phase04_target_status: Literal["retained-optional-review-workflow"]
     phase04_activation_requirements: tuple[str, ...]
     interpretation: Literal[
         "resolved methodology decisions plus operational prerequisites; not scientific "

@@ -224,7 +224,7 @@ def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
     _write_ai_sources(config, roots=roots)
     pipeline_manifest = run_pipeline(config, register, from_="00", to="03")
     assert pipeline_manifest.error == "", repr(pipeline_manifest)
-    assert pipeline_manifest.stopped_at == "03"
+    assert pipeline_manifest.stopped_at == ""
 
     existing_runs = {item.name for item in config.runs_root.iterdir() if item.is_dir()}
     workflow = config.ai.phase03_workflow

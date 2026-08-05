@@ -1446,16 +1446,16 @@ class Phase03GeologySynthesis(Phase):
             "Preliminary Deposit Model and score-matrix templates emitted",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
-            note="Template + 6-model evidence table + 8x6 score matrix emitted; human to complete.",
+            note="Template + 6-model evidence table + 8x6 score matrix emitted; missing values remain explicit data gaps until AI or source evidence completes them.",
         )
         report.add(
             "Geology-scan georeferencing acceptance evidence complete",
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
             note=(
-                "Source/target CRS, GCPs, transformation, residual/RMSE, derivative hashes and "
-                "named qualified review remain required under METH-READY-004; the handling "
-                "decision is recorded by METH-DISC-055."
+                "Source/target CRS, GCPs, transformation, residual/RMSE and derivative hashes are "
+                "recorded when available; missing control evidence remains an accuracy data gap "
+                "under METH-DISC-076."
             ),
         )
         report.add(
@@ -1463,9 +1463,9 @@ class Phase03GeologySynthesis(Phase):
             RECORDED_ACCEPTANCE,
             decision=Decision.PENDING,
             note=(
-                "Exact bundle/derivative identity, parse, CRS, topology, measurements, buffers "
-                "and qualified review remain required under METH-READY-005; the handling "
-                "decision is recorded by METH-DISC-057."
+                "Exact bundle/derivative identity, parse, CRS, topology, measurements and buffers "
+                "must pass deterministic validation; a separate reviewer attestation is optional "
+                "for automated execution under METH-DISC-076."
             ),
         )
         report.add(
@@ -1594,16 +1594,16 @@ _PHASE3_NOTE = (
     "the CMCS 5/10/20/25 km context buffer off the Phase 01 licence boundary, ingests the #68\n"
     "mineralized-point XLSX (4326->32647) and exact manifest-authorized reviewed layers, and\n"
     "assembles the\n"
-    "preliminary 17-layer support-evidence schema/package in "
+    "17-layer support-evidence schema/package in "
     "`Geological_Evidence_Layers_v01.gpkg`. Layer presence is not evidence completeness, "
-    "scientific approval, or authoritative Phase 04 readiness.\n\n"
+    "evidence completeness; missing content is recorded as a data gap.\n\n"
     "**Evidence rule (non-negotiable):** every Phase 03 output is historical / contextual /\n"
     "preliminary support only — not decision-grade, not ore proof. Every feature records\n"
     '`validation_status = "Historical only"` and a `limitation` note; CMCS/MRPAM buffer hits\n'
     'are stamped "Context only — not proof of mineralization inside license".\n\n'
-    "Human work in QGIS/Excel/Word: georeference #70/#53/#57/#55; digitize lithology/contact/\n"
-    "fault/vein/prospectivity/source-material vectors into the named evidence layers; write the\n"
-    "Preliminary Deposit Model .docx; fill the 6-model evidence table + 8x6 score matrix.\n\n"
+    "Optional specialist work in QGIS/Excel/Word may correct georeferencing, digitized features\n"
+    "or the deposit-model matrix. Automated outputs retain exact AI/source provenance and leave\n"
+    "unavailable observations empty rather than fabricating them.\n\n"
     "**Feature IDs (Appendix A):** `BUD-<PREFIX>-0001` via `concat('BUD-MIN-', lpad(@row_number,\n"
     "4,'0'))`. Prefixes: BUD-MET / BUD-GEO200 / BUD-GEO50 / BUD-STR / BUD-MIN / BUD-TGT /\n"
     "BUD-OBS / BUD-RTE. (BUD-HM-AN / BUD-SS-AN are reserved for Phase 8/9 anomaly layers; the\n"

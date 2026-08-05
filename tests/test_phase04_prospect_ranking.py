@@ -324,8 +324,8 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     ranking_map = next(
         (pdir / "05_A_B_C_D_Field_Priority").glob("*Preliminary_Prospect_Ranking_Map.pdf")
     )
-    assert b"legacy comparator" in ranking_map.read_bytes()
-    assert b"remained class D" in ranking_map.read_bytes()
+    assert b"automated ranking" in ranking_map.read_bytes()
+    assert b"No A/B/C prospect polygons" in ranking_map.read_bytes()
 
     # the three desktop-unavailable criteria are recorded as data gaps
     gap = next((pdir / "04_Confidence_DataGap_NextAction").glob("*DataGap_and_NextAction*.xlsx"))
@@ -358,18 +358,18 @@ def test_phase04_real_run_grid_and_gate(raw_archive):
     )
     assert PHASE04_DESKTOP_MATRIX_LABEL in method_text
     assert PHASE04_DESKTOP_MATRIX_LABEL in qaqc_text
-    assert "fixed-grid binary/full-weight **legacy comparator**" in method_text
-    assert "human-drawn prospect and ranged-judgment workflow" in method_text
-    assert "METH-DISC-041" in method_text
-    assert "METH-DISC-060 and METH-DISC-068" in method_text
+    assert (
+        "fixed-grid binary/full-weight method is the default **automated candidate" in method_text
+    )
+    assert "reviewed ranged-judgment workflow remains optional" in method_text
+    assert "METH-DISC-076" in method_text
     assert "unresolved geometry" not in method_text
-    assert "review signals, not an authoritative Go/No-Go decision" in method_text
+    assert "evidence-based automated rankings, not proof of mineralization" in method_text
     assert "selected, immutable evidence manifests" in method_text
     assert "directory proximity have no authority" in method_text
     assert "dropped under the Phase 03/04 dirs" not in method_text
     assert "exact-role adapter admits authoritative road evidence" in method_text
-    assert "qualified expert review" in phase.gate_condition
-    assert "selected for drone/recon" not in phase.gate_condition
+    assert "advance to targeted validation planning" in phase.gate_condition
     assert "v9 §5 8-criterion matrix" not in method_text
     assert "v9 §5 8-criterion matrix" not in qaqc_text
 
@@ -415,13 +415,13 @@ def test_phase04_delineates_prospects(raw_archive):
     decision_header, decision_data = decision_rows[0], decision_rows[1:]
     decisions = {str(row[decision_header.index("desktop_decision")]) for row in decision_data}
     assert decisions <= {
-        "Advance for expert review",
-        "Retain for expert review with data gaps",
-        "Do not advance; monitor",
+        "Advance to next validation stage",
+        "Retain with explicit data gaps",
+        "Deprioritize; monitor for new evidence",
     }
     assert not decisions & {"Go", "Conditional", "No-Go (monitor)"}
     assert all(
-        "not a scientific or operational approval" in str(row[decision_header.index("rationale")])
+        "not proof of mineralization" in str(row[decision_header.index("rationale")])
         for row in decision_data
     )
     assert all(
@@ -470,11 +470,11 @@ def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     class_a = [row for row in data if row[header.index("prospect_class")] == "A"]
     assert class_a
     assert all(
-        row[header.index("desktop_decision")] == "Advance for expert review" for row in class_a
+        row[header.index("desktop_decision")] == "Advance to next validation stage"
+        for row in class_a
     )
     assert all(
-        row[header.index("next_action")]
-        == "Qualified geological review before any field or drone decision"
+        row[header.index("next_action")] == "Prepare targeted ground-validation plan"
         for row in class_a
     )
 

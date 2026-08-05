@@ -31,7 +31,7 @@ def _authorization(**updates: object) -> ExecutionAuthorization:
         "scope_phase_ids": ("01",),
         "validity": "until-expiry",
         "expires_at": datetime(2026, 7, 25, tzinfo=UTC),
-        "resulting_permitted_mode": ExecutionMode.SCAFFOLD,
+        "resulting_permitted_mode": ExecutionMode.AUTOMATED,
     }
     values.update(updates)
     return ExecutionAuthorization.create(**values)
@@ -42,11 +42,10 @@ def test_execution_policy_covers_every_registered_phase_and_current_boundaries()
     by_phase = {item.phase_id: item for item in registry.phase_policies}
 
     assert tuple(by_phase) == tuple(f"{value:02d}" for value in range(12)) + ("99",)
-    assert by_phase["00"].default_real_mode is ExecutionMode.AUTHORITATIVE
-    assert by_phase["01"].default_real_mode is ExecutionMode.SCAFFOLD
-    assert by_phase["02"].default_real_mode is ExecutionMode.SUPPORT_EVIDENCE
-    assert by_phase["03"].default_real_mode is ExecutionMode.SUPPORT_EVIDENCE
-    assert by_phase["04"].default_real_mode is ExecutionMode.LEGACY_COMPARATOR
+    assert all(
+        by_phase[phase].default_real_mode is ExecutionMode.AUTOMATED
+        for phase in ("00", "01", "02", "03", "04")
+    )
     assert all(by_phase[phase].default_real_mode is None for phase in (*by_phase.keys(),)[5:])
     assert {
         phase_id: tuple(
@@ -54,33 +53,17 @@ def test_execution_policy_covers_every_registered_phase_and_current_boundaries()
         )
         for phase_id, policy in by_phase.items()
         if policy.blocked_modes
-    } == {
-        "01": ("METH-READY-005",),
-        "02": ("METH-READY-003", "METH-READY-005"),
-        "03": ("METH-READY-004", "METH-READY-005", "METH-READY-006"),
-        "04": (
-            "METH-READY-004",
-            "METH-READY-005",
-            "METH-READY-006",
-            "METH-READY-007",
-        ),
-        "05": ("METH-READY-001",),
+    } == {"05": ("METH-READY-001",)}
+    assert not registry.operational_exception_controls
+    assert not registry.pending_source_gate_rules
+    assert set(registry.publication_policy.approved_source_modes) == {
+        ExecutionMode.AUTOMATED,
+        ExecutionMode.AUTHORITATIVE,
     }
-    assert tuple(item.control_id for item in registry.operational_exception_controls) == (
-        "OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE",
-    )
-    assert len(registry.pending_source_gate_rules) == 1
-    bridge = registry.pending_source_gate_rules[0]
-    assert bridge.source_phase_id == "03"
-    assert bridge.source_mode is ExecutionMode.SUPPORT_EVIDENCE
-    assert bridge.consumer_phase_id == "04"
-    assert bridge.consumer_mode is ExecutionMode.LEGACY_COMPARATOR
-    assert bridge.require_qaqc_passed is True
-    assert bridge.require_pending_items is True
 
 
-def test_policy_rejects_blocked_authoritative_and_unimplemented_real_modes() -> None:
-    with pytest.raises(ExecutionPolicyError, match=r"METH-READY-004.*METH-READY-006"):
+def test_policy_rejects_unimplemented_authoritative_and_parked_real_modes() -> None:
+    with pytest.raises(ExecutionPolicyError, match="does not implement authoritative"):
         resolve_execution_policy(
             ["03"],
             dry_run=False,

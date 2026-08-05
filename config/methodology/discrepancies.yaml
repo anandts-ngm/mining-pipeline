@@ -1,4 +1,4 @@
-format_version: 1.5.0
+format_version: 1.6.0
 # Append-only methodology decision register. Complete history — unresolved, resolved,
 # superseded, and withdrawn records. Resolved history is never erased; a later issue
 # gets a new linked record instead of reopening one. Historical records migrated from
@@ -1206,3 +1206,20 @@ discrepancies:
     effective_version: methodology-contracts-v1.5.0
     implementation_evidence: config/methodology/authority.yaml external-only historical records; repository policy catalog and methodology mirror tests.
     related_discrepancy_ids: [METH-DISC-063, METH-DISC-064]
+  - discrepancy_id: METH-DISC-076
+    subject: owner-directed-automated-phase00-04-execution
+    compared_sources:
+      - methodology.master-v9
+      - config/methodology/automation_readiness.yaml
+      - config/methodology/execution_policy.yaml
+      - AGENTS.md
+    statement: Earlier runtime contracts kept review-dependent Phase 03 and Phase 04 states as completion blockers even after the project owner directed the engine to produce the best functional Phase 00-04 outputs from available real evidence.
+    operational_impact: The active runtime and its machine-readable contracts must agree that missing evidence lowers completeness and confidence but does not by itself stop otherwise valid deterministic or AI-assisted output generation.
+    status: resolved
+    resolution: Adopt automated as the default real execution mode for Phases 00-04, convert review-only pending QA/QC rows to explicit non-blocking data gaps in that mode, and permit completed automated packages to be delivered. Retain strict failures for corrupt inputs, invalid geometry, failed deterministic checks and fabricated evidence. Keep the reviewed prospect-polygon workflow as an optional separately invokable path and Phase 05 parked.
+    rationale: This implements the repository owner's execution-first direction while preserving the master's calculations, raw identities, evidence lineage and the rule that unavailable facts cannot be manufactured. Automated completion is a workflow result, not proof of ore, grade, resource or economics.
+    approver: repository-owner directive
+    resolved_on: "2026-08-05"
+    effective_version: methodology-contracts-v1.6.0
+    implementation_evidence: AGENTS.md execution policy; execution_policy.yaml v1.1.0; automation_readiness.yaml owner-accepted Phase 00-04 obligations; automated pending-data-gap runner policy; publication-mode tests.
+    related_discrepancy_ids: [METH-DISC-003, METH-DISC-031, METH-DISC-040, METH-DISC-041, METH-DISC-060, METH-DISC-062, METH-DISC-067, METH-DISC-068, METH-DISC-072]

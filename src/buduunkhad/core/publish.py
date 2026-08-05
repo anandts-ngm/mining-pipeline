@@ -1482,8 +1482,8 @@ def render_publication_index(manifest: PublicationManifest) -> bytes:
         lines.extend(
             [
                 "",
-                "Only `authoritative` source phases can support APPROVED package status;",
-                "scaffold, support-evidence, and legacy-comparator outputs remain provisional.",
+                "`automated` and `authoritative` source phases can support APPROVED package status;",
+                "scaffold, support-evidence, and legacy-comparator modes remain compatibility-only.",
             ]
         )
     lines.append("")

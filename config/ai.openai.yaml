@@ -17,9 +17,9 @@ ai:
   concurrency: 1
   source_egress_policy: require-explicit-approval
   review_policy:
-    require_named_reviewer: true
-    high_risk_requires_geologist: true
-    production_geometry_requires_approval: true
+    require_named_reviewer: false
+    high_risk_requires_geologist: false
+    production_geometry_requires_approval: false
   phase03_workflow:
     # A live run must select an exact source ID. This keeps source-specific interpretations and
     # cost approvals separate; the CLI will not send this whole catalog accidentally.

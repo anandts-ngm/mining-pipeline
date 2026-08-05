@@ -24,6 +24,7 @@ RequirementStatus = Literal["adopted", "adopted-with-unresolved-discrepancy"]
 CoverageStatus = Literal["implemented", "implemented-with-review", "partially-implemented"]
 AutomationStatus = Literal[
     "implemented",
+    "automated",
     "partially-implemented",
     "legacy-comparator",
     "stub",
@@ -35,7 +36,13 @@ BlockerCategory = Literal[
     "missing-validation-evidence",
     "parameter-selection",
 ]
-ReadinessStatus = Literal["blocked-dataset", "blocked-human-evidence", "excluded", "parked"]
+ReadinessStatus = Literal[
+    "blocked-dataset",
+    "blocked-human-evidence",
+    "excluded",
+    "owner-accepted",
+    "parked",
+]
 
 
 class MethodologySource(BaseModel):
@@ -412,7 +419,7 @@ class MethodologyDiscrepancy(BaseModel):
 class DiscrepancyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.5.0"]
+    format_version: Literal["1.6.0"]
     discrepancies: tuple[MethodologyDiscrepancy, ...]
 
     @model_validator(mode="after")
@@ -559,8 +566,13 @@ class AutomationReadinessObligation(BaseModel):
             raise ValueError("readiness obligation contains an unknown phase")
         if len(set(self.source_refs)) != len(self.source_refs):
             raise ValueError("readiness obligation contains duplicate source references")
-        if self.status in {"excluded", "blocked-dataset"} and self.blocks_phase_completion:
-            raise ValueError("dataset exclusions cannot claim to block the whole phase")
+        if (
+            self.status in {"excluded", "blocked-dataset", "owner-accepted"}
+            and self.blocks_phase_completion
+        ):
+            raise ValueError(
+                "excluded, dataset-blocked, and owner-accepted obligations cannot block the phase"
+            )
         if self.status in {"parked", "blocked-human-evidence"} and not self.blocks_phase_completion:
             raise ValueError("parked or human-blocked obligations must block phase completion")
         return self
@@ -773,18 +785,18 @@ class Phase04ClassBand(BaseModel):
 
 
 class Phase04MigrationContract(BaseModel):
-    """Master-aligned target contract kept separate from the legacy comparator."""
+    """Optional reviewed prospect workflow kept separate from automated Phase 04."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.1.0"]
     phase_id: Literal["04"]
     authority_source: Literal["methodology.master-v9"]
     authority_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     scoring_source: Literal["phase04.guide"]
     class_band_source: Literal["methodology.master-v9"]
-    decision_sources: tuple[Literal["METH-DISC-060", "METH-DISC-068"], ...]
-    status: Literal["implemented-inactive"]
+    decision_sources: tuple[Literal["METH-DISC-060", "METH-DISC-068", "METH-DISC-076"], ...]
+    status: Literal["retained-optional-review-workflow"]
     legacy_comparator_status: Literal["retained-regression-only"]
     target_geometry: Literal["human-reviewed-prospect-polygons"]
     criteria: tuple[Phase04Criterion, ...] = Field(min_length=1)
@@ -793,7 +805,7 @@ class Phase04MigrationContract(BaseModel):
     required_fields: tuple[str, ...] = Field(min_length=1)
     ai_policy: tuple[str, ...] = Field(min_length=1)
     activation_requirements: tuple[str, ...] = Field(min_length=1)
-    blocking_readiness_ids: tuple[str, ...] = Field(min_length=1)
+    blocking_readiness_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _complete_scoring_contract(self) -> Phase04MigrationContract:
@@ -821,7 +833,7 @@ class Phase04MigrationContract(BaseModel):
             raise ValueError("Phase 04 target class bands must match the exact master")
         if len(set(self.required_fields)) != len(self.required_fields):
             raise ValueError("Phase 04 required fields contain duplicates")
-        if self.decision_sources != ("METH-DISC-060", "METH-DISC-068"):
+        if self.decision_sources != ("METH-DISC-060", "METH-DISC-068", "METH-DISC-076"):
             raise ValueError("Phase 04 migration decisions must be exact and ordered")
         return self
 

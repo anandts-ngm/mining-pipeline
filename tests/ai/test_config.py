@@ -219,16 +219,6 @@ def test_ai_config_copy_and_reload_paths_revalidate_security_fields() -> None:
         ({"enabled": True}, "legacy execution"),
         ({"external_data_allowed": True}, "legacy execution"),
         ({"provider": AIProviderSelection.OPENAI}, "legacy execution"),
-        (
-            {
-                "review_policy": {
-                    "require_named_reviewer": False,
-                    "high_risk_requires_geologist": True,
-                    "production_geometry_requires_approval": True,
-                }
-            },
-            "safeguards",
-        ),
     ],
 )
 def test_project_config_revalidates_security_sensitive_ai_updates_on_every_public_path(
@@ -252,6 +242,18 @@ def test_project_config_revalidates_security_sensitive_ai_updates_on_every_publi
     for operation in operations:
         with pytest.raises(ValidationError, match=message):
             operation()
+
+
+def test_ai_review_policy_allows_owner_directed_automation() -> None:
+    config = load_config(Path("config/project.yaml"))
+    review_policy = config.ai.review_policy.model_validate(
+        {
+            "require_named_reviewer": False,
+            "high_risk_requires_geologist": False,
+            "production_geometry_requires_approval": False,
+        }
+    )
+    assert not any(review_policy.model_dump().values())
 
 
 def test_project_config_unvalidated_construction_apis_fail_explicitly() -> None:

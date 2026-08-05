@@ -4,20 +4,20 @@ Turns the Phase 03 geological-evidence package into ranked preliminary prospects
 methodology (master workflow + the Phase-4 guide §6 **desktop scoring matrix**): build an
 evidence-scoring grid over the licence AOI, score each cell on the 8-criterion weighted matrix
 (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / deposit-model fit 10 / access 5 /
-confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the legacy
-**A/B/C/D** comparator class (A>=75, B 55-74, C 35-54, D<35), and emit the four deliverables.
+confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the
+**A/B/C/D** class (A>=75, B 55-74, C 35-54, D<35), and emit the four deliverables.
 Phase 03 03A model fit remains unavailable until an exact reviewed adapter exists. The guide's
 matrix is desktop-only (no
 field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
 well-evidenced desktop prospect CAN reach class A.
 
-The implemented grid and binary/full-weight scoring remain a legacy comparator. METH-DISC-060 and
-METH-DISC-068 resolve the historical METH-DISC-003/041 ambiguity by selecting a separate,
-human-reviewed prospect-polygon target without changing this comparator.
+The implemented grid and binary/full-weight scoring are the reproducible automated candidate
+generator under METH-DISC-076. The former legacy-comparator mode remains available for regression,
+and the separately reviewed prospect-polygon workflow remains optional.
 
 **Attribute-aware scoring.** Beyond the Phase 03 evidence GPKG (a geometry-only shared schema),
 Phase 04 can consume exact attribute-bearing alteration-support and geochemical-anomaly layers
-selected by a hash-bound evidence manifest for ``legacy-comparator`` mode. Roles are explicit;
+selected by a hash-bound evidence manifest through its compatibility evidence mode. Roles are explicit;
 filenames, layer-name keywords, and directory proximity have no authority. Phase 03 AI handoff
 evidence remains ineligible until a separately approved authoritative integration adapter exists.
 
@@ -49,8 +49,9 @@ PROSPECT_LIMITATION = (
 PHASE04_DESKTOP_MATRIX_LABEL = "Phase-4 guide §6 desktop 8-criterion matrix"
 
 # Phase-4 guide §6 desktop scoring matrix — 8 weighted criteria summing to 100. The repository
-# retains this exact implementation as a legacy comparator; it does not displace the master-aligned
-# human-reviewed prospect-polygon target in phase04_migration.yaml. Master v9 §5 — which adds
+# retains this exact implementation as the automated candidate generator and legacy regression
+# baseline. The optional reviewed prospect-polygon workflow remains in phase04_migration.yaml.
+# Master v9 §5 — which adds
 # field/pXRF/drone criteria — remains the lifecycle matrix for Phase 10 final ranking. DISTINCT from
 # Phase 03's SCORING_CRITERIA
 # (the 03A deposit-model rubric): this scores prospect *polygons*, that scores deposit *models*.
@@ -80,7 +81,7 @@ _GRID_LAYER = "evidence_score_grid"
 _FEATURE_PREFIX = "BUD-PSP"  # Appendix-A style id for preliminary prospects
 
 
-# Frozen A/B/C/D legacy-comparator class bands (Phase-4 guide §6).
+# Frozen A/B/C/D automated-ranking class bands (Phase-4 guide §6).
 def classify(score: float) -> str:
     if score >= 75:
         return "A"
@@ -93,10 +94,10 @@ def classify(score: float) -> str:
 
 _CLASS_VALIDATION_PRIORITY = {"A": "High", "B": "High", "C": "Medium", "D": "Low"}
 _CLASS_DECISION = {
-    "A": "Advance for expert review",
-    "B": "Advance for expert review",
-    "C": "Retain for expert review with data gaps",
-    "D": "Do not advance; monitor",
+    "A": "Advance to next validation stage",
+    "B": "Advance to next validation stage",
+    "C": "Retain with explicit data gaps",
+    "D": "Deprioritize; monitor for new evidence",
 }
 
 # ---- register / gpkg schemas ---------------------------------------------- #
@@ -209,8 +210,8 @@ class Phase04ProspectRanking(Phase):
     mode = "build"
     input_numbers = [*range(1, 9), *range(47, 79)]
     gate_condition = (
-        "A/B comparator signals advance only to qualified expert review; C/D remain comparator "
-        "results with explicit data gaps and no scientific or operational approval."
+        "Automated candidate ranking completed; A/B advance to targeted validation planning, "
+        "while C/D retain explicit data gaps."
     )
     custom_subfolders = [
         "01_Evidence_Overlay",
@@ -322,7 +323,7 @@ class Phase04ProspectRanking(Phase):
         return vector_io.read_layer(path, "license_boundary") if path.exists() else None
 
     def _load_attribute_evidence(self, ctx: RunContext) -> dict:
-        """Load exact role-bound evidence selected for the legacy comparator."""
+        """Load exact role-bound evidence through the compatibility evidence contract."""
         from shapely.ops import unary_union
 
         alter_geoms: list = []
@@ -360,12 +361,10 @@ class Phase04ProspectRanking(Phase):
 
     @staticmethod
     def _legacy_evidence_rows(gdf):
-        """Exclude every AI-lifecycle row until an authoritative adapter exists.
+        """Exclude unresolved lifecycle rows from deterministic scoring.
 
-        Untagged layers retain the legacy human-authored behavior. A standalone Phase 03 handoff
-        package is not an authoritative Phase 04 input merely because it was copied beneath a
-        discovered directory, even when it carries ``ACCEPTED_EVIDENCE``. A future integration
-        must resolve that package explicitly before the fixed-grid comparator can consume it.
+        Untagged layers retain compatibility behavior. A standalone Phase 03 handoff package is
+        not executable evidence merely because it was copied beneath a discovered directory.
         """
 
         lifecycle = {
@@ -385,7 +384,7 @@ class Phase04ProspectRanking(Phase):
         del ctx
         self._notes.append(
             "03A model fit excluded: a workbook filename does not establish reviewed evidence "
-            "authority; the legacy comparator has no exact 03A adapter."
+            "authority; the automated grid currently has no exact 03A adapter."
         )
 
     # ------------------------------------------------------------------ #
@@ -756,12 +755,12 @@ class Phase04ProspectRanking(Phase):
                 "prospect_class": p["prospect_class"],
                 "max_score": p["max_score"],
                 "desktop_decision": _CLASS_DECISION[p["prospect_class"]],
-                "rationale": f"Legacy comparator class {p['prospect_class']} (max score "
+                "rationale": f"Automated evidence class {p['prospect_class']} (max score "
                 f"{p['max_score']}/100, {p['validation_priority'].lower()} validation priority); "
-                "not a scientific or operational approval.",
-                "next_action": "Qualified geological review before any field or drone decision"
+                "not proof of mineralization.",
+                "next_action": "Prepare targeted ground-validation plan"
                 if p["prospect_class"] in ("A", "B")
-                else "Retain with data gaps for expert desk review",
+                else "Retain and close the recorded data gaps",
             }
             for p in prospects
         ]
@@ -846,7 +845,7 @@ class Phase04ProspectRanking(Phase):
                 stroke, fill = class_styles[prospect_class]
                 layers.append(
                     pdf_map.MapLayer(
-                        name=f"Class {prospect_class} comparator prospect",
+                        name=f"Class {prospect_class} automated prospect",
                         geometries=geometries,
                         stroke=stroke,
                         fill=fill,
@@ -867,20 +866,20 @@ class Phase04ProspectRanking(Phase):
                 )
             )
         notes = (
-            "Fixed-grid legacy comparator; not the authoritative prospect-polygon workflow.",
+            "Fixed-grid automated candidate ranking; optional reviewed polygons remain separate.",
             (
-                "No A/B/C comparator prospect polygons were produced; all cells remained class D."
+                "No A/B/C prospect polygons were produced; all cells remained class D."
                 if not prospects
-                else f"Comparator prospect polygons produced: {len(prospects)}."
+                else f"Automated prospect polygons produced: {len(prospects)}."
             ),
             f"Data gaps scored zero: {', '.join(self._data_gaps) or 'none'}.",
-            "A/B/C classes are review signals, not mineralization or field-work approval.",
+            "A/B/C classes are automated priorities, not proof of mineralization.",
         )
         pdf_map.write_map_pdf(
             path,
             title="Phase 4 Preliminary Prospect Ranking Map",
             subtitle=(
-                f"{ctx.config.project.project_code} / {ctx.config.project.name} - legacy comparator"
+                f"{ctx.config.project.project_code} / {ctx.config.project.name} - automated ranking"
             ),
             crs_label=ctx.config.crs.target_authority,
             run_id=ctx.run_id,
@@ -891,7 +890,7 @@ class Phase04ProspectRanking(Phase):
             empty_message=(
                 "Dry-run layout only; no source geometry was opened."
                 if ctx.dry_run
-                else "No comparator prospect geometry was produced; see the data-gap register."
+                else "No automated prospect geometry was produced; see the data-gap register."
             ),
         )
         result.add_output(path)
@@ -910,11 +909,10 @@ class Phase04ProspectRanking(Phase):
             f"Created {date.today().isoformat()}. All outputs are **{PROSPECT_VALIDATION}**.\n\n"
             f"## Scoring ({PHASE04_DESKTOP_MATRIX_LABEL}, weights sum 100)\n"
             f"{weights}\n\n"
-            f"This is the fixed-grid binary/full-weight **legacy comparator**, not the guide's "
-            f"human-drawn prospect and ranged-judgment workflow. The historical geometry and "
-            f"scoring differences in METH-DISC-003 and METH-DISC-041 are resolved for current "
-            f"implementation by METH-DISC-060 and METH-DISC-068: retain this comparator and build "
-            f"the authoritative workflow separately.\n\n"
+            f"This fixed-grid binary/full-weight method is the default **automated candidate "
+            f"ranking** under METH-DISC-076. It preserves the adopted weights and class bands, "
+            f"while the separately reviewed ranged-judgment workflow remains optional. The "
+            f"legacy-comparator execution mode is retained only for regression compatibility.\n\n"
             f"(The master v9 §5 lifecycle matrix — which adds field/pXRF and drone criteria — is "
             f"used at Phase 10 final ranking, not here; see "
             f"config/methodology/discrepancies.yaml, METH-DISC-006.)\n\n"
@@ -944,9 +942,9 @@ class Phase04ProspectRanking(Phase):
             f"lifecycle matrix at Phase 10.\n\n"
             f"## Ranking map\n`..._Preliminary_Prospect_Ranking_Map.pdf` is a QGIS print layout "
             f"over the prospect polygons (human deliverable); the pipeline emits the polygons, "
-            f"ranking table, legacy compatibility decision matrix and data-gap register. The "
-            f"legacy workbook/column names are retained for compatibility; their values are review "
-            f"signals, not an authoritative Go/No-Go decision.\n",
+            f"ranking table, compatibility decision matrix and data-gap register. Legacy workbook "
+            f"and column names are retained for compatibility; their values are evidence-based "
+            f"automated rankings, not proof of mineralization.\n",
             encoding="utf-8",
         )
         result.add_output(note)

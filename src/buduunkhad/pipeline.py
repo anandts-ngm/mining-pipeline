@@ -42,7 +42,7 @@ from buduunkhad.core.execution_policy import (
     validate_authorizations_for_run,
 )
 from buduunkhad.core.gates import GateDecision, GateStatus
-from buduunkhad.core.qaqc import Decision
+from buduunkhad.core.qaqc import Decision, QAQCReport
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.run_artifacts import RunOutputArtifact, has_symlink_component, sha256_file
 from buduunkhad.core.run_storage import (
@@ -1352,6 +1352,7 @@ def run_pipeline(
                     outcome.status = result.status
                     declared_outputs = list(result.outputs)
                     report = phase.qaqc(ctx)
+                    _apply_automated_pending_policy(report, execution_modes[phase.id])
                     qaqc_path = _write_phase_qaqc(ctx, phase, report)
                     declared_outputs.append(qaqc_path)
                     outcome.qaqc_passed = report.passed
@@ -1520,6 +1521,18 @@ def run_pipeline(
                 _close_logger(logger)
 
         return manifest
+
+
+def _apply_automated_pending_policy(report: QAQCReport, mode: ExecutionMode) -> None:
+    """Keep missing work visible without turning owner-cleared automation into a provisional run."""
+
+    if mode is not ExecutionMode.AUTOMATED:
+        return
+    suffix = "Owner-directed automated execution records this as a data gap, not a gate blocker."
+    for item in report.items:
+        if item.decision is Decision.PENDING:
+            item.decision = Decision.NA
+            item.note = f"{item.note.rstrip()} {suffix}".strip()
 
 
 def _can_advance(decision: GateDecision) -> bool:

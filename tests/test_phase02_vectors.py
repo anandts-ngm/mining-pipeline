@@ -1,7 +1,7 @@
 """Phase-02 vector products: hydrology (whitebox) + lineament draft (scikit-image).
 
-Happy paths are skipped when the optional dependency is absent (CI installs only [dev]);
-the degradation paths are environment-independent and always run.
+The development environment exercises the scikit-image path. The skip preserves support for
+minimal runtime environments, while the degradation paths remain environment-independent.
 """
 
 from __future__ import annotations

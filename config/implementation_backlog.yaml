@@ -1,15 +1,15 @@
-format_version: 1.3.0
+format_version: 1.4.0
 authority_status: planning-only
 runtime_effect: none
 items:
   - item_id: ENG-BACKLOG-009
     title: Complete real Phase 03 scientific evidence and handoff
-    status: implemented-workflow-real-sources-prepared-awaiting-ai-and-review
+    status: implemented-workflow-real-sources-prepared-awaiting-ai-execution
     priority: phase03-functional-completeness
     objective: >-
       Run the master-governed Phase 03 workflow across every approved historical source, obtain
-      reviewed geological evidence and complete the 03A deposit-model decision needed for an
-      authoritative Phase 03 handoff.
+      validated geological evidence and complete the 03A deposit-model decision used by the
+      automated Phase 03-to-04 workflow.
     implemented_work:
       - Bind the exact 28 registered Phase 03 inputs to their Phase 00 working-copy hashes and
         emit source traceability in the sealed handover directory.
@@ -37,21 +37,22 @@ items:
         legend regions become available; the currently prepared six-source catalog is operational.
       - Use a bounded crop or a separately reviewed batching-and-reconciliation workflow for the
         four configured maps whose current full-map tile plans exceed the 24-image live limit.
-      - Run the source packages, review or edit every proposal in QGIS, and admit only accepted
-        geology, structure, occurrence and alteration evidence through the existing manifest.
-      - Supply the real independent georeference reviews and complete the 03A assessment,
-        critique and project-geologist decision.
-      - Resolve the final Phase 03 handoff against the exact accepted boundary, georeferences,
-        evidence manifests and 03A records.
+      - Run the source packages and admit deterministically validated geology, structure,
+        occurrence and alteration outputs through the existing manifest.
+      - Complete the AI 03A assessment and independent critique from the evidence that is actually
+        available; leave missing criteria explicit and zero-scored.
+      - Produce the automated Phase 03 handoff against the exact boundary, georeferences,
+        evidence manifests, AI outputs and 03A records.
     acceptance:
       - Every Phase 03 conclusion resolves to exact source and accepted-evidence identities.
       - Schema-only or empty outputs cannot satisfy scientific content checks.
-      - AI output never promotes itself or silently stitches ambiguous geometry.
-      - The scientific handoff passes only after every exact human decision exists.
+      - AI output never silently stitches ambiguous geometry or fabricates missing evidence.
+      - The automated handoff identifies every missing source and limitation without blocking
+        otherwise valid outputs.
     non_goals:
       - Add Prefect, PostGIS, STAC, a dashboard or a new agent framework before real Phase 03
         outputs prove those services are needed.
-      - Change the Phase 04 legacy comparator or fabricate missing scientific acceptance.
+      - Fabricate missing scientific measurements, source data or provider results.
   - item_id: ENG-BACKLOG-008
     title: Complete Phase 02 sensor processing and handover outputs
     status: implemented-local-handover-external-kompsat-blocked
@@ -138,11 +139,11 @@ items:
       - Unknown provider/model pricing fails closed rather than assuming zero cost.
   - item_id: ENG-BACKLOG-005
     title: Seal deterministic licence-boundary validation evidence
-    status: implemented-awaiting-human-acceptance
+    status: implemented-owner-accepted-for-automated-execution
     priority: deterministic-readiness
     depends_on:
       - Run-isolated outputs and immutable phase sealing.
-      - Centralized execution modes that keep METH-READY-005 blocking authoritative use.
+      - Centralized execution modes that retain deterministic boundary failures.
     objective: >-
       Bind the exact registered boundary source and Phase 01 derivatives to truthful,
       reproducible CRS, coordinate, topology, area, perimeter and buffer measurements without
@@ -157,22 +158,20 @@ items:
         invalid features, overlaps, projected area/perimeter and every configured buffer.
       - Revalidate every recorded file identity before reuse and keep qualified human review in
         a separate complete, named, UTC, authorization-bound attestation contract.
-      - Add a canonical Phase 01 QA/QC pass for deterministic completion and a distinct pending
-        item for the two required human reviewer roles.
-    remaining_human_work:
-      - A geospatial data custodian must inspect and attest the exact sealed validation record.
-      - A qualified geospatial reviewer must independently accept or reject the same record.
-      - A future trusted resolver must bind those attestations before METH-READY-005 may close.
+      - Add a canonical Phase 01 QA/QC pass for deterministic completion and retain optional
+        reviewer attestation contracts for teams that want a separate manual audit.
+    remaining_work:
+      - Run the validator on each real project boundary and retain the sealed measurements.
     acceptance:
       - Source or derivative mutation is detected before review or reuse.
       - Missing, invalid, non-polygon, overlapping, wrong-CRS or incoherent buffer findings fail
         deterministic completion without inventing a tolerance.
-      - No machine-generated record contains a reviewer, review time or approval decision.
-      - Phase 01 remains scaffold-only and authoritative downstream use stays blocked while the
-        human obligation is unresolved.
+      - No machine-generated record fabricates a reviewer, review time or signature.
+      - A passing deterministic record supports automated Phase 01-04 execution under
+        METH-DISC-076.
     non_goals:
       - Define scientific acceptance thresholds or approve the licence boundary.
-      - Resolve METH-READY-005 without both qualified human authorities.
+      - Fabricate a human identity, signature or measurement.
       - Change raw identities, buffer distances, geological calculations or downstream scoring.
   - item_id: ENG-BACKLOG-004
     title: Centralize execution policy and replace the generic override
@@ -187,6 +186,7 @@ items:
       distinguish execution purposes honestly, and prevent one generic operator flag from
       waiving unrelated raw-integrity, operational, scientific or publication controls.
     execution_modes:
+      - automated
       - scaffold
       - support-evidence
       - legacy-comparator
@@ -206,11 +206,9 @@ items:
         unknown or unclassified checks remain non-overridable.
       - Bind execution-policy identity, phase modes, readiness obligations and authorization
         identities into run creation, resume validation and publication identity.
-      - Keep support-evidence and legacy-comparator packages publishable only with truthful
-        provisional limitations; they can never produce an authoritative APPROVED package.
+      - Keep historical support-evidence and legacy-comparator packages provisional while current
+        automated runs can produce completed deliverable packages.
     non_overridable_controls:
-      - Phase 03 scientific handoff and qualified geological approval.
-      - Phase 04 authoritative-workflow activation and methodology-owner approval.
       - Flight, HSE and mission approval.
       - Unknown, unclassified or scientific QA/QC failures.
     compatibility:
@@ -221,13 +219,12 @@ items:
     acceptance:
       - Runtime decisions and readiness obligations cannot disagree.
       - Raw drift cannot be waived by an ordinary operational exception.
-      - An operational exception or data-gap acknowledgement cannot create scientific evidence
-        or approval.
-      - Phase 03 scientific blockers remain non-overridable.
-      - Phase 04 comparator outputs cannot enter authoritative publication.
+      - An operational exception or data-gap acknowledgement cannot create source data or a
+        positive observation.
+      - Automated Phase 03 and Phase 04 keep missing evidence visible and zero-scored.
       - Resume fails if policy, mode, obligation or authorization identity changes.
     non_goals:
-      - Resolve any existing METH-READY obligation or fabricate its required evidence.
+      - Fabricate any missing evidence or deterministic validation result.
       - Change geological scoring, thresholds, geometry, raw identities or gate approvals.
       - Enable a provider, external egress, Phase 05 implementation or unattended scientific
         approval.

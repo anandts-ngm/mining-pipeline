@@ -105,6 +105,70 @@ def test_aoi_mask_reads_and_updates_a_writable_rpc_target(tmp_path: Path) -> Non
     assert np.all(values[:, 2:] == 0)
 
 
+def test_interpretation_gpkg_contains_machine_lineaments_and_review_layers(
+    tmp_path: Path,
+) -> None:
+    import fiona
+    import rasterio
+    from rasterio.transform import from_origin
+
+    source = tmp_path / "pansharpened.tif"
+    height = width = 1024
+    rows, columns = np.mgrid[0:height, 0:width]
+    diagonal = np.abs(rows - columns) < 12
+    rgb = np.full((3, height, width), 160, dtype="uint8")
+    rgb[:, diagonal] = 20
+    with rasterio.open(
+        source,
+        "w",
+        driver="GTiff",
+        width=width,
+        height=height,
+        count=3,
+        dtype="uint8",
+        crs="EPSG:32647",
+        transform=from_origin(300000, 5100000, 1, 1),
+        nodata=0,
+    ) as dataset:
+        dataset.write(rgb)
+
+    destination = tmp_path / "interpretation.gpkg"
+    count = kompsat._write_interpretation_gpkg(
+        source,
+        destination,
+        target_epsg=32647,
+        source_filename="synthetic-pan.tif",
+    )
+
+    assert count >= 1
+    assert set(fiona.listlayers(destination)) == {
+        "lineament_interpretation_line",
+        "outcrop_interpretation_polygon",
+        "access_track_line",
+        "disturbance_surface_polygon",
+    }
+    with fiona.open(destination, layer="lineament_interpretation_line") as layer:
+        features = list(layer)
+        assert len(features) == count
+        assert layer.crs.to_epsg() == 32647
+        assert all(
+            feature["properties"]["source_raw_filename"] == "synthetic-pan.tif"
+            for feature in features
+        )
+        assert all(
+            feature["properties"]["validation_status"]
+            == "Machine draft — requires geologist review"
+            for feature in features
+        )
+    for layer_name in (
+        "outcrop_interpretation_polygon",
+        "access_track_line",
+        "disturbance_surface_polygon",
+    ):
+        with fiona.open(destination, layer=layer_name) as layer:
+            assert len(layer) == 0
+
+
 def test_kompsat_processing_record_forbids_external_distribution() -> None:
     source = kompsat.KompsatSourceInspection(
         role="PAN",

@@ -436,9 +436,10 @@ def test_phase03_method_note_published_location(raw_archive):
     note = pdir / "12_Phase3_QAQC_and_Handover" / note_name
     assert note.exists()
     note_text = note.read_text(encoding="utf-8")
-    assert "preliminary 17-layer support-evidence schema/package" in note_text
+    assert "17-layer support-evidence schema/package" in note_text
     assert "authoritative 17-layer" not in note_text
     assert "Layer presence is not evidence completeness" in note_text
+    assert "unavailable observations empty rather than fabricating them" in note_text
     assert not (pdir / "01_Input_Working_Copy" / note_name).exists()
     assert note_name in {p.name for p in collect_deliverables(config.output_root)}
 

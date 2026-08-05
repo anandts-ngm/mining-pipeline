@@ -177,7 +177,7 @@ class CompatibilityRunManifest(BaseModel):
 def publication_status_for(
     phases: tuple[PublishedPhase, ...], *, enforce_execution_modes: bool = True
 ) -> PublicationStatus:
-    """Derive a conservative package state without treating automation as approval."""
+    """Derive package state from completed gates and the bound execution mode."""
 
     if any(phase.human_review_or_qaqc_pending for phase in phases):
         return "HUMAN_REVIEW_PENDING"
@@ -186,10 +186,12 @@ def publication_status_for(
     if any(phase.source_binding_mode == "LEGACY_PATH_ONLY" for phase in phases):
         return "PROVISIONAL"
     if enforce_execution_modes and any(
-        phase.execution_mode is not ExecutionMode.AUTHORITATIVE for phase in phases
+        phase.execution_mode not in {ExecutionMode.AUTOMATED, ExecutionMode.AUTHORITATIVE}
+        for phase in phases
     ):
         return "PROVISIONAL"
-    if phases and all(phase.gate_state.upper() == "APPROVED" for phase in phases):
+    completed_gate_states = {"APPROVED", "GO"} if enforce_execution_modes else {"APPROVED"}
+    if phases and all(phase.gate_state.upper() in completed_gate_states for phase in phases):
         return "APPROVED"
     return "PROVISIONAL"
 

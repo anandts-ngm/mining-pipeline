@@ -270,25 +270,22 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert all(phase["sealed_files"] for phase in data["phases"])
 
 
-def test_manifest_surfaces_qaqc_pending_alongside_passed(raw_archive):
-    # qaqc_passed means "nothing failed" and is True even with PENDING items; the manifest must
-    # carry the companion qaqc_pending signal so a consumer can tell "passed" from "complete".
-    # Phase 00's real run always leaves the source-note/owner item PENDING for the operator.
+def test_automated_manifest_records_review_only_pending_items_as_data_gaps(raw_archive):
     config, register, _raw = raw_archive
     manifest = run_pipeline(config, register, only=["00"], dry_run=False)
 
     p00 = next(p for p in manifest.phases if p.phase_id == "00")
-    assert p00.qaqc_passed is True  # no failures
-    assert p00.qaqc_pending is True  # but human-completion items remain
-    assert p00.qaqc_pending == p00.gate_provisional  # both derive from has_pending
+    assert p00.qaqc_passed is True
+    assert p00.qaqc_pending is False
+    assert p00.gate_provisional is False
 
     # the field is machine-readable in the written manifest, not just on the dataclass
     man_path = config.runs_root / manifest.run_id / "run_manifest.json"
     data = json.loads(man_path.read_text(encoding="utf-8"))
     d00 = next(p for p in data["phases"] if p["phase_id"] == "00")
     assert d00["qaqc_passed"] is True
-    assert d00["qaqc_pending"] is True
-    assert d00["pending_human_review_or_qaqc_count"] > 0
+    assert d00["qaqc_pending"] is False
+    assert d00["pending_human_review_or_qaqc_count"] == 0
 
 
 def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
@@ -323,11 +320,10 @@ def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
     assert resumed.evidence_manifests == []
 
 
-def test_runner_preserves_phase03_gate_and_runs_only_the_legacy_comparator(raw_archive):
-    """Pending scientific work stays blocked while the provisional comparator can run."""
+def test_runner_completes_automated_phase03_and_phase04_with_visible_data_gaps(raw_archive):
 
     config, register, _raw = raw_archive
-    run_id = "strict-phase03-scientific-gate"
+    run_id = "automated-phase03-phase04"
     manifest = run_pipeline(
         config,
         register,
@@ -341,18 +337,18 @@ def test_runner_preserves_phase03_gate_and_runs_only_the_legacy_comparator(raw_a
     assert manifest.stopped_at == ""
     phase03 = manifest.phases[-2]
     phase04 = manifest.phases[-1]
-    assert phase03.gate_status == GateStatus.BLOCKED.value
+    assert phase03.gate_status == GateStatus.GO.value
     assert not phase03.gate_overridden
-    assert phase03.qaqc_pending
-    assert phase03.pending_human_review_or_qaqc_count > 0
-    assert phase04.execution_mode.value == "legacy-comparator"
+    assert not phase03.qaqc_pending
+    assert phase03.pending_human_review_or_qaqc_count == 0
+    assert phase04.execution_mode.value == "automated"
     assert phase04.status == "ok"
     assert len([path for path in phase03.outputs if path.endswith("_Phase03_QAQC_Log.xlsx")]) == 1
     assert len([path for path in phase03.outputs if "Phase3_Technical_Processing_Log" in path]) == 1
 
     run_log = (config.runs_root / run_id / "logs" / "run.log").read_text(encoding="utf-8")
-    assert "Phase 03 scientific gate remains blocked" in run_log
-    assert "continuing only to Phase 04 in legacy-comparator mode" in run_log
+    assert "Phase 03 gate: go" in run_log
+    assert "scientific gate remains blocked" not in run_log
     assert "use --override" not in run_log
 
 
@@ -373,13 +369,7 @@ def test_retired_override_fails_before_creating_a_run(raw_archive):
     assert not (config.runs_root / run_id).exists()
 
 
-def test_exact_operational_exception_is_scoped_and_recorded(raw_archive, monkeypatch):
-    from buduunkhad.core.execution_policy import (
-        AuthorizationAction,
-        ExecutionAuthorization,
-        ExecutionMode,
-        phase_gate_subject,
-    )
+def test_automated_mode_does_not_hide_deterministic_qaqc_failures(raw_archive, monkeypatch):
     from buduunkhad.phases.phase01_data_audit import Phase01DataAudit
 
     config, register, _raw = raw_archive
@@ -391,37 +381,21 @@ def test_exact_operational_exception_is_scoped_and_recorded(raw_archive, monkeyp
         return report
 
     monkeypatch.setattr(Phase01DataAudit, "qaqc", failed_qaqc)
-    authorization = ExecutionAuthorization.create(
-        action=AuthorizationAction.OPERATIONAL_EXCEPTION,
-        actor="pipeline-operator-test",
-        authorization_reference="TEST-OPS-001",
-        reason="Exercise exact bounded operational exception handling.",
-        subject=phase_gate_subject("01", "OPERATIONAL-EXCEPTION-01-HANDOFF-PACKAGE"),
-        recorded_at=datetime.now(UTC),
-        scope_phase_ids=("01",),
-        validity="until-expiry",
-        expires_at=datetime.now(UTC) + timedelta(days=1),
-        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
-    )
-    path = config.base_dir / "operational-exception.json"
-    path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")
-
     manifest = run_pipeline(
         config,
         register,
         only=["00", "01"],
         dry_run=False,
-        authorization_paths=[path],
     )
 
-    assert manifest.stopped_at == ""
-    assert manifest.used_authorization_ids == [authorization.authorization_id]
-    assert manifest.phases[1].gate_overridden is True
-    assert manifest.phases[1].authorization_ids == [authorization.authorization_id]
-    assert "AUTHORIZED OPERATIONAL EXCEPTION" in manifest.phases[1].gate_reason
+    assert manifest.stopped_at == "01"
+    assert manifest.error == "Phase 01 QA/QC failed before artifact sealing"
+    assert manifest.phases[1].gate_status == GateStatus.BLOCKED.value
+    assert manifest.phases[1].gate_overridden is False
+    assert not manifest.phases[1].outputs
 
 
-def test_phase04_can_bind_a_pending_phase03_support_evidence_source(raw_archive):
+def test_phase04_can_bind_a_completed_automated_phase03_source(raw_archive):
     config, register, _raw = raw_archive
     source = run_pipeline(
         config,
@@ -429,7 +403,7 @@ def test_phase04_can_bind_a_pending_phase03_support_evidence_source(raw_archive)
         only=["00", "01", "03"],
         dry_run=False,
     )
-    assert source.stopped_at == "03"
+    assert source.stopped_at == ""
 
     result = run_pipeline(
         config,
@@ -441,7 +415,7 @@ def test_phase04_can_bind_a_pending_phase03_support_evidence_source(raw_archive)
 
     assert result.stopped_at == ""
     assert [phase.phase_id for phase in result.phases] == ["04"]
-    assert result.phases[0].execution_mode.value == "legacy-comparator"
+    assert result.phases[0].execution_mode.value == "automated"
     bindings = {item.phase_id: item for item in result.source_phases}
     assert bindings["03"].source_run_id == source.run_id
 
@@ -504,7 +478,7 @@ def test_phase04_rejects_a_blocked_phase03_source_without_pending_items(
     assert not source.error
     assert source.phases[-1].qaqc_pending is False
 
-    with pytest.raises(RuntimeError, match="not a passing run with pending human items"):
+    with pytest.raises(RuntimeError, match="source Phase 03 gate did not permit advancement"):
         run_pipeline(
             config,
             register,
@@ -637,7 +611,7 @@ def test_unexpected_gap_requires_exact_expiring_acknowledgement(raw_archive):
         scope_phase_ids=("01",),
         validity="until-expiry",
         expires_at=now + timedelta(days=1),
-        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
+        resulting_permitted_mode=ExecutionMode.AUTOMATED,
     )
     path = config.base_dir / "data-gap-acknowledgement.json"
     path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")
@@ -657,7 +631,7 @@ def test_unexpected_gap_requires_exact_expiring_acknowledgement(raw_archive):
         recorded_at=now,
         scope_phase_ids=("01",),
         validity="until-superseded",
-        resulting_permitted_mode=ExecutionMode.SCAFFOLD,
+        resulting_permitted_mode=ExecutionMode.AUTOMATED,
     )
     transition_path = config.base_dir / "raw-transition-for-gap.json"
     transition_path.write_text(transition.model_dump_json(indent=2) + "\n", encoding="utf-8")

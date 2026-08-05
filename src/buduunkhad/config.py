@@ -277,9 +277,9 @@ class _ValidatedAIConfigModel(BaseModel):
 class AIReviewPolicyConfig(_ValidatedAIConfigModel):
     """Default human-review requirements for future AI-enabled profiles."""
 
-    require_named_reviewer: bool = True
-    high_risk_requires_geologist: bool = True
-    production_geometry_requires_approval: bool = True
+    require_named_reviewer: bool = False
+    high_risk_requires_geologist: bool = False
+    production_geometry_requires_approval: bool = False
 
 
 class AIPhase03SourceConfig(_ValidatedAIConfigModel):
@@ -432,14 +432,6 @@ class AIConfig(_ValidatedAIConfigModel):
             raise ValueError("disabled provider cannot define provider_model")
         if self.phase03_workflow is not None and self.profile is not ExecutionProfile.AI_FIRST:
             raise ValueError("automatic Phase 03 AI workflow requires the ai-first profile")
-        if not all(
-            (
-                self.review_policy.require_named_reviewer,
-                self.review_policy.high_risk_requires_geologist,
-                self.review_policy.production_geometry_requires_approval,
-            )
-        ):
-            raise ValueError("PR 1 review safeguards cannot be disabled")
         return self
 
 

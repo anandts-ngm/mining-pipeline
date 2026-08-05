@@ -118,7 +118,7 @@ def test_raw_integrity_requires_exact_data_custodian_transition(raw_archive):
         recorded_at=datetime.now(UTC),
         scope_phase_ids=("00",),
         validity="until-superseded",
-        resulting_permitted_mode=ExecutionMode.AUTHORITATIVE,
+        resulting_permitted_mode=ExecutionMode.AUTOMATED,
     )
     authorization_path = config.base_dir / "raw-transition.json"
     authorization_path.write_text(authorization.model_dump_json(indent=2) + "\n", encoding="utf-8")

@@ -14,23 +14,23 @@ requirements:
     source_refs: [repository.methodology-contracts, methodology.master-v9, phase03.guide, METH-DISC-018]
     status: adopted
   - requirement_id: P03-GEOREF-OWNERSHIP-001
-    statement: Phase 03 owns final georeferencing; incomplete records remain non-spatial or preliminary and block scientific handoff until the METH-READY-004 qualified acceptance evidence is complete.
-    source_refs: [repository.methodology-contracts, methodology.master-v9, phase03.guide, METH-DISC-028, METH-DISC-055]
+    statement: Phase 03 owns final georeferencing; incomplete control records remain non-spatial or accuracy data gaps, while valid available derivatives continue through automated execution under METH-DISC-076.
+    source_refs: [repository.methodology-contracts, methodology.master-v9, phase03.guide, METH-DISC-028, METH-DISC-055, METH-DISC-076]
     status: adopted
   - requirement_id: P03-PRELIMINARY-EVIDENCE-001
-    statement: The seventeen-layer GeoPackage is a preliminary support-evidence schema/package; layer presence or schema validity is not evidence completeness or scientific approval, and pending master-required human handoff items block the Phase 03 gate.
-    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-031, METH-DISC-040, METH-DISC-062, METH-DISC-067]
+    statement: The seventeen-layer GeoPackage is a support-evidence schema/package; layer presence or schema validity is not evidence completeness, and missing content remains an explicit data gap without blocking other valid Phase 03 outputs.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-031, METH-DISC-040, METH-DISC-062, METH-DISC-067, METH-DISC-076]
     status: adopted
   - requirement_id: P03-AI-DRAFT-001
     statement: AI-first digitization produces draft geometry in source-image pixel coordinates, and each configured historical source has its own exact request, response and review identity.
-    source_refs: [repository.methodology-contracts, phase03.guide]
+    source_refs: [repository.methodology-contracts, phase03.guide, METH-DISC-076]
     status: adopted
   - requirement_id: P03-DETERMINISTIC-VALIDATION-001
     statement: CRS, registration, geometry, topology, attribution, overlap and provenance validation remain deterministic.
     source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-AI-HUMAN-HANDOFF-001
-    statement: Validated AI draft geometry remains isolated until a named human records an explicit review decision and a separate deterministic operation promotes accepted evidence.
+    statement: Validated AI geometry retains its proposal identity and exact provenance; optional human edits and promotion remain separate without preventing the automated workflow from packaging and using the best validated result available.
     source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-EVIDENCE-AUTHORITY-001
@@ -38,8 +38,8 @@ requirements:
     source_refs: [repository.methodology-contracts, methodology.master-v9]
     status: adopted
   - requirement_id: P03-DEPOSIT-MODEL-001
-    statement: The preliminary 03A deposit-model assessment uses the adopted eight-criterion 100-point matrix, keeps supporting, contradicting and missing evidence explicit, prevents double-counting, separates AI proposal from critique, and reserves the final decision for the project geologist.
-    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-023, METH-DISC-062]
+    statement: The 03A deposit-model assessment uses the adopted eight-criterion 100-point matrix, keeps supporting, contradicting and missing evidence explicit, prevents double-counting, and separates the AI assessment from independent critique; optional geologist review may replace or refine the automated conclusion.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-023, METH-DISC-062, METH-DISC-076]
     status: adopted
 implementation_coverage:
   - coverage_id: P03-COV-SOURCE-SCAFFOLD-001

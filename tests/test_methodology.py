@@ -25,7 +25,7 @@ from buduunkhad.geospatial_ai.methodology import (
 )
 from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 76)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 77)}
 METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
@@ -361,7 +361,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 76)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 77)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -397,7 +397,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
         replacement = by_id[item.superseded_by]  # ty: ignore[invalid-argument-type]
         assert replacement.status in {"resolved", "unresolved"}
     cyclic = {
-        "format_version": "1.5.0",
+        "format_version": "1.6.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-902"),
             _record("METH-DISC-902", status="superseded", superseded_by="METH-DISC-901"),
@@ -406,7 +406,7 @@ def test_supersession_links_are_valid_and_acyclic() -> None:
     with pytest.raises(ValidationError, match="cyclic"):
         DiscrepancyRegistry.model_validate(cyclic)
     dangling = {
-        "format_version": "1.5.0",
+        "format_version": "1.6.0",
         "discrepancies": [
             _record("METH-DISC-901", status="superseded", superseded_by="METH-DISC-999"),
         ],
@@ -628,14 +628,14 @@ def test_sentinel_extent_conflict_is_append_only_and_resolved() -> None:
     assert "METH-DISC-015" in decision.related_discrepancy_ids
 
 
-def test_phase04_master_aligned_target_is_typed_and_separate_from_legacy() -> None:
+def test_phase04_optional_review_workflow_is_typed_and_separate_from_automated() -> None:
     contract = load_phase04_migration_contract()
-    assert contract.status == "implemented-inactive"
+    assert contract.status == "retained-optional-review-workflow"
     assert contract.legacy_comparator_status == "retained-regression-only"
     assert contract.target_geometry == "human-reviewed-prospect-polygons"
     assert contract.scoring_source == "phase04.guide"
     assert contract.class_band_source == "methodology.master-v9"
-    assert contract.decision_sources == ("METH-DISC-060", "METH-DISC-068")
+    assert contract.decision_sources == ("METH-DISC-060", "METH-DISC-068", "METH-DISC-076")
     assert sum(item.maximum_points for item in contract.criteria) == 100
     assert [
         (band.class_id, band.minimum_score, band.maximum_score) for band in contract.class_bands
@@ -645,12 +645,7 @@ def test_phase04_master_aligned_target_is_typed_and_separate_from_legacy() -> No
         ("C", 35, 54),
         ("D", 0, 34),
     ]
-    assert set(contract.blocking_readiness_ids) == {
-        "METH-READY-004",
-        "METH-READY-005",
-        "METH-READY-006",
-        "METH-READY-007",
-    }
+    assert not contract.blocking_readiness_ids
     assert any(
         "provenance-bound human reference set" in item for item in contract.activation_requirements
     )
@@ -744,9 +739,9 @@ def test_phase_coverage_cannot_adopt_obsolete_guide_detail(tmp_path: Path) -> No
 def test_readme_describes_current_phase_maturity_and_authority_location() -> None:
     repository_root = Path(__file__).resolve().parents[1]
     readme = (repository_root / "README.txt").read_text(encoding="utf-8")
-    assert "Phases 00-04 have substantial deterministic implementations." in readme
-    assert "Phase 03 remains\nscientifically incomplete" in readme
-    assert "Phase 04 remains a legacy comparator" in readme
+    assert "Phases 00-04 have substantial automated implementations." in readme
+    assert "review-only pending rows do not stop automated Phase 00-04" in readme
+    assert "legacy-comparator` execution mode is retained only for regression" in readme
     assert "deterministic end-to-end implementations" not in readme
 
     tracked = (
@@ -779,12 +774,8 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     assert phase_ids == {f"{value:02d}" for value in range(12)} | {"99"}
     implemented = {item.phase_id for item in registry.boundaries if item.status == "implemented"}
     assert implemented == {"00", "01", "02"}
-    assert next(item for item in registry.boundaries if item.phase_id == "03").status == (
-        "partially-implemented"
-    )
-    assert next(item for item in registry.boundaries if item.phase_id == "04").status == (
-        "legacy-comparator"
-    )
+    assert next(item for item in registry.boundaries if item.phase_id == "03").status == "automated"
+    assert next(item for item in registry.boundaries if item.phase_id == "04").status == "automated"
     for item in registry.boundaries:
         assert item.deterministic_authority
         assert item.human_review_boundary
@@ -814,8 +805,8 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     phase04 = next(item for item in registry.boundaries if item.phase_id == "04")
     phase04_text = " ".join(phase04.deterministic_authority)
     assert "exact artifact, layer, role" in phase04_text
-    assert "pending human items" in phase04_text
-    assert "not a scientific handoff" in phase04_text
+    assert "automated execution records absent criteria" in phase04_text
+    assert "legacy-comparator mode remains available only for regression" in phase04_text
 
 
 def test_phase03_and_phase04_require_explicit_evidence_authority() -> None:
@@ -829,23 +820,25 @@ def test_phase03_and_phase04_require_explicit_evidence_authority() -> None:
     assert "exact source artifact, layer, explicit evidence role" in phase04_authority
     assert "filename keywords" in phase04_authority
     phase04_gate = phase04["P04-GATE-PROVISIONAL-001"].statement
-    assert "feed only the provisional legacy comparator" in phase04_gate
-    assert "does not activate authoritative Phase 04" in phase04_gate
+    assert "feed automated Phase 04" in phase04_gate
+    assert "deterministic failures still block" in phase04_gate
 
 
-def test_operational_readiness_preserves_real_evidence_and_human_blockers() -> None:
+def test_operational_readiness_preserves_real_evidence_and_owner_accepted_gaps() -> None:
     registry = load_automation_readiness()
     by_id = {item.obligation_id: item for item in registry.obligations}
     assert set(by_id) == {f"METH-READY-{number:03d}" for number in range(1, 8)}
     assert by_id["METH-READY-001"].status == "parked"
     assert by_id["METH-READY-002"].status == "excluded"
     assert not by_id["METH-READY-002"].blocks_phase_completion
-    assert by_id["METH-READY-004"].blocks_phase_completion
-    assert by_id["METH-READY-005"].blocks_phase_completion
-    assert "qualified geospatial reviewer" in by_id["METH-READY-005"].required_human_authority
+    assert by_id["METH-READY-004"].status == "owner-accepted"
+    assert not by_id["METH-READY-004"].blocks_phase_completion
+    assert by_id["METH-READY-005"].status == "owner-accepted"
+    assert not by_id["METH-READY-005"].blocks_phase_completion
+    assert "project-owner direction" in by_id["METH-READY-005"].required_human_authority[0]
     boundary_steps = " ".join(by_id["METH-READY-005"].deterministic_next_steps)
     assert "emit and seal" in boundary_steps
-    assert "deterministic completion alone does not resolve" in boundary_steps
+    assert "do not pause for another attestation" in boundary_steps
     combined = " ".join(
         text
         for item in registry.obligations
@@ -935,7 +928,7 @@ def test_resolution_links_fail_closed_and_preserve_append_only_history() -> None
     resolution = _record("METH-DISC-901", status="resolved")
     resolution["resolves_discrepancy_ids"] = ["METH-DISC-900"]
     registry = DiscrepancyRegistry.model_validate(
-        {"format_version": "1.5.0", "discrepancies": [unresolved, resolution]}
+        {"format_version": "1.6.0", "discrepancies": [unresolved, resolution]}
     )
     assert not registry.unresolved()
     assert tuple(item.discrepancy_id for item in registry.historical_unresolved()) == (
@@ -946,21 +939,21 @@ def test_resolution_links_fail_closed_and_preserve_append_only_history() -> None
     dangling["resolves_discrepancy_ids"] = ["METH-DISC-999"]
     with pytest.raises(ValidationError, match="unknown record"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.5.0", "discrepancies": [unresolved, dangling]}
+            {"format_version": "1.6.0", "discrepancies": [unresolved, dangling]}
         )
 
     duplicate = dict(resolution)
     duplicate["resolves_discrepancy_ids"] = ["METH-DISC-900", "METH-DISC-900"]
     with pytest.raises(ValidationError, match="contains duplicates"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.5.0", "discrepancies": [unresolved, duplicate]}
+            {"format_version": "1.6.0", "discrepancies": [unresolved, duplicate]}
         )
 
     forward = dict(resolution)
     forward["discrepancy_id"] = "METH-DISC-899"
     with pytest.raises(ValidationError, match="only earlier"):
         DiscrepancyRegistry.model_validate(
-            {"format_version": "1.5.0", "discrepancies": [forward, unresolved]}
+            {"format_version": "1.6.0", "discrepancies": [forward, unresolved]}
         )
 
 

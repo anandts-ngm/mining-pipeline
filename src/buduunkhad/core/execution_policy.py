@@ -40,6 +40,7 @@ class ExecutionMode(StrEnum):
     SCAFFOLD = "scaffold"
     SUPPORT_EVIDENCE = "support-evidence"
     LEGACY_COMPARATOR = "legacy-comparator"
+    AUTOMATED = "automated"
     AUTHORITATIVE = "authoritative"
     PUBLICATION = "publication"
 
@@ -101,8 +102,8 @@ class PublicationExecutionPolicy(BaseModel):
     def _coherent_publication_modes(self) -> PublicationExecutionPolicy:
         approved = set(self.approved_source_modes)
         provisional = set(self.provisional_source_modes)
-        if approved != {ExecutionMode.AUTHORITATIVE}:
-            raise ValueError("only authoritative runs may support APPROVED publication")
+        if approved != {ExecutionMode.AUTOMATED, ExecutionMode.AUTHORITATIVE}:
+            raise ValueError("automated and authoritative runs must support APPROVED publication")
         if approved & provisional:
             raise ValueError("publication source modes overlap")
         expected = {
@@ -167,10 +168,10 @@ class PendingSourceGateRule(BaseModel):
 class ExecutionPolicyRegistry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.1.0"]
     interpretation: Literal[
-        "Runtime execution permissions derived from implementation state and open readiness "
-        "obligations; not scientific approval or evidence that an obligation is resolved."
+        "Owner-directed functional execution policy; automated Phases 00-04 produce completed "
+        "outputs while missing inputs remain explicit data gaps."
     ]
     phase_policies: tuple[PhaseExecutionPolicy, ...]
     pending_source_gate_rules: tuple[PendingSourceGateRule, ...]
@@ -209,7 +210,7 @@ class PhaseModeBinding(BaseModel):
 class ExecutionPolicyBinding(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.0.0", "1.1.0"]
     policy_sha256: Sha256
     phase_modes: tuple[PhaseModeBinding, ...]
 

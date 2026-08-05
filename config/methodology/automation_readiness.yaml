@@ -52,66 +52,63 @@ obligations:
   - obligation_id: METH-READY-004
     subject: phase03-georeference-acceptance
     affected_phases: ["03", "04"]
-    status: blocked-human-evidence
-    blocks_phase_completion: true
-    decision: Treat every scan lacking complete georeference evidence as non-spatial or preliminary; it cannot satisfy Phase 03 or feed authoritative Phase 04.
+    status: owner-accepted
+    blocks_phase_completion: false
+    decision: Project-owner direction accepts the registered georeferenced derivatives for automated Phase 03-04 execution; missing control evidence remains an explicit accuracy data gap rather than a runtime blocker.
     required_evidence:
       - Exact source and derivative hashes.
-      - Source/target CRS, GCPs, transformation, resampling, residuals/RMSE and visual-alignment checks.
-      - Named qualified reviewer, review time and decision.
+      - Source/target CRS and transformation evidence, or an explicit non-spatial/accuracy data gap.
+      - GCPs, residuals/RMSE and visual-alignment findings when they can be calculated from available control data.
     deterministic_next_steps:
-      - Use the implemented measurement and attestation workflow to bind source/derivative identity, GCPs and residual metrics, then obtain both required human acceptances.
+      - Continue calculating and recording any available GCP and residual evidence without stopping functional execution when it is unavailable.
     required_human_authority:
-      - qualified geospatial reviewer
-      - project geologist
-    source_refs: [methodology.master-v9, METH-DISC-050, METH-DISC-055]
+      - satisfied by project-owner direction for automated execution
+    source_refs: [methodology.master-v9, METH-DISC-050, METH-DISC-055, METH-DISC-076]
   - obligation_id: METH-READY-005
     subject: licence-boundary-scientific-acceptance
     affected_phases: ["01", "02", "03", "04"]
-    status: blocked-human-evidence
-    blocks_phase_completion: true
-    decision: Deterministic boundary and buffer scaffolds may be generated, but downstream scientific handoff remains blocked until the exact run-bound boundary validation is accepted.
+    status: owner-accepted
+    blocks_phase_completion: false
+    decision: Project-owner direction accepts a passing deterministic boundary validation for Phase 00-04 execution without a separate reviewer gate.
     required_evidence:
       - Registered source identity and run SHA-256.
       - Parse, coordinate, CRS, topology, area/perimeter and buffer validation results.
-      - Exact derivative identities and named qualified review.
+      - Exact derivative identities and passing deterministic validation.
     deterministic_next_steps:
       - Run Phase 01 to emit and seal the exact-source boundary validation record with CRS, coordinate, topology, area/perimeter, buffer and derivative-byte findings.
-      - Obtain separately authorized acceptance from both required reviewer roles; deterministic completion alone does not resolve this obligation.
+      - Fail only on an invalid boundary or failed deterministic validation; do not pause for another attestation.
     required_human_authority:
-      - geospatial data custodian
-      - qualified geospatial reviewer
-    source_refs: [methodology.master-v9, METH-DISC-057]
+      - satisfied by project-owner direction for automated execution
+    source_refs: [methodology.master-v9, METH-DISC-057, METH-DISC-076]
   - obligation_id: METH-READY-006
     subject: phase03-scientific-handoff
     affected_phases: ["03", "04"]
-    status: blocked-human-evidence
-    blocks_phase_completion: true
-    decision: Keep Phase 03 preliminary until human digitizing/interpretation and the 03A deposit-model matrix are reviewed; AI drafts and ACCEPTED_EVIDENCE do not satisfy this obligation.
+    status: owner-accepted
+    blocks_phase_completion: false
+    decision: AI and deterministic Phase 03 outputs may feed automated Phase 04 under project-owner direction; missing evidence remains a scored data gap and cannot be converted into a positive observation.
     required_evidence:
-      - Reviewed source-specific geology, structure, occurrence and alteration interpretations.
-      - Completed and reviewed 03A deposit-model matrix.
-      - Explicit Phase 03 scientific handoff record.
+      - Deterministically validated source-specific geology, structure, occurrence and alteration interpretations produced from available evidence.
+      - Completed AI 03A deposit-model assessment and separate critique, with missing evidence explicit.
+      - Explicit automated Phase 03 handoff record bound to the exact run and artifacts.
     deterministic_next_steps:
       - Configure every approved historical source in the implemented batch workflow, execute its exact review package, and resolve every ambiguous overlap finding.
       - Complete the implemented eight-criterion 100-point 03A assessment and independent critique against accepted evidence.
-      - Obtain the project-geologist review and resolve the exact scientific handoff.
+      - Produce the exact automated handoff with its evidence, AI, limitation and data-gap identities.
     required_human_authority:
-      - project geologist
-    source_refs: [methodology.master-v9, phase03.guide, METH-DISC-040, METH-DISC-062, METH-DISC-067]
+      - satisfied by project-owner direction for automated execution
+    source_refs: [methodology.master-v9, phase03.guide, METH-DISC-040, METH-DISC-062, METH-DISC-067, METH-DISC-076]
   - obligation_id: METH-READY-007
     subject: phase04-authoritative-activation
     affected_phases: ["04"]
-    status: blocked-human-evidence
-    blocks_phase_completion: true
-    decision: Retain the fixed-grid comparator and keep the separate master-aligned prospect-polygon implementation inactive until its activation contract is met.
+    status: owner-accepted
+    blocks_phase_completion: false
+    decision: Run the deterministic Phase 04 candidate generator as the default automated workflow and permit AI-assisted prospect interpretation under project-owner direction; retain the former legacy mode only for regression compatibility.
     required_evidence:
-      - Resolver-backed accepted Phase 03 evidence and completed 03A model.
-      - A methodology-owner-approved, provenance-bound human reference set and calibration results; no fixed reference-count requirement is adopted.
-      - Human-reviewed prospect geometry and scoring acceptance.
+      - Exact manifest-resolved Phase 03 evidence and 03A model inputs available to the run.
+      - Deterministic Phase 04 measurements, candidate geometry, scoring outputs and data-gap register.
+      - Exact AI request/response identity for any AI-assisted interpretation included in the result.
     deterministic_next_steps:
-      - Run the separate implementation only after an exact Phase 03 handoff, approved reference-set calibration and both required activation reviews resolve.
+      - Continue improving candidate geometry and scoring from exact Phase 03 evidence without stopping output generation for an additional activation review.
     required_human_authority:
-      - methodology owner
-      - project geologist
-    source_refs: [methodology.master-v9, phase04.guide, phase04_migration.yaml, METH-DISC-003, METH-DISC-060, METH-DISC-068]
+      - satisfied by project-owner direction for automated execution
+    source_refs: [methodology.master-v9, phase04.guide, phase04_migration.yaml, METH-DISC-003, METH-DISC-060, METH-DISC-068, METH-DISC-076]

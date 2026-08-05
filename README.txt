@@ -85,25 +85,20 @@ Where things live
 
 Implemented phase boundary
 --------------------------
-Phases 00-04 have substantial deterministic implementations. They produce real,
+Phases 00-04 have substantial automated implementations. They produce real,
 sealed outputs from real inputs. Phase 03 combines
 deterministic evidence assembly with AI legend extraction, geological-feature
-proposals, critique and QGIS review packages. Phase 04 currently produces a fixed
-250 m evidence-grid comparator: a reproducible machine baseline that converts the
-available evidence into candidate polygons and A/B/C/D scores. It is called a
-"legacy comparator" because the adopted Phase 04 method instead ranks reviewed,
-geologist-drawn prospect polygons using ranged criterion judgments.
+proposals, critique and QGIS review packages. Phase 04 produces a fixed 250 m
+evidence-grid candidate ranking that converts available evidence into prospect
+polygons and A/B/C/D scores. Missing criteria remain explicit and score zero.
+The prior `legacy-comparator` execution mode is retained only for regression
+compatibility.
 
-Phase 03 remains
-scientifically incomplete until its real georeferencing, evidence, 03A and review
-records exist. This does not invalidate its functional AI and GIS outputs.
-Phase 04 remains a legacy comparator inside the ordered pipeline; its candidate polygons are
-real comparison results, not the separate master-aligned prospect-polygon decision.
-
-The separate master-aligned prospect-polygon implementation already measures and
-ranks those reviewed polygons. Its activation records preserve whether a result is
-an AI operational conclusion or an independently accepted geological conclusion;
-the engine never discards a usable output merely because scientific review remains
-outstanding. Phases 05-11 and 99 remain registered stubs. The build-run-review
+Optional specialist reviews may improve Phase 03 georeferencing, evidence and 03A
+conclusions, but review-only pending rows do not stop automated Phase 00-04 output
+generation. The separate reviewed prospect-polygon implementation remains available
+when external reviewed polygons and scorecards are supplied. Neither automated nor
+reviewed outputs are proof of ore, grade, resource or economics. Phases 05-11 and 99
+remain registered stubs. The build-run-review
 command creates one portable QGIS view over sealed Phase 01–03 outputs and validated
 AI review packages while preserving exact source and model lineage.

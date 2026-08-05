@@ -1,11 +1,11 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "04"
 authority_source: methodology.master-v9
 authority_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e
 scoring_source: phase04.guide
 class_band_source: methodology.master-v9
-decision_sources: [METH-DISC-060, METH-DISC-068]
-status: implemented-inactive
+decision_sources: [METH-DISC-060, METH-DISC-068, METH-DISC-076]
+status: retained-optional-review-workflow
 legacy_comparator_status: retained-regression-only
 target_geometry: human-reviewed-prospect-polygons
 criteria:
@@ -73,8 +73,4 @@ activation_requirements:
   - Add resolver-backed Phase 03 accepted-evidence integration.
   - Complete licence-boundary and georeferencing validation evidence.
   - Obtain methodology-owner and project-geologist acceptance of the calibrated implementation.
-blocking_readiness_ids:
-  - METH-READY-004
-  - METH-READY-005
-  - METH-READY-006
-  - METH-READY-007
+blocking_readiness_ids: []
