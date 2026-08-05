@@ -15,21 +15,26 @@ from rasterio.transform import from_origin
 
 from buduunkhad.ai.contracts import AIUsage, TaskType
 from buduunkhad.ai.providers import ProviderCall, ProviderExecutionResult
-from buduunkhad.config import load_config
+from buduunkhad.config import AIPhase03SourceConfig, load_config
 from buduunkhad.geospatial_ai.ai_first import (
+    Phase03AIFirstError,
+    load_phase03_ai_batch_manifest,
     load_phase03_ai_first_manifest,
     run_phase03_ai_first,
+    run_phase03_ai_first_batch,
 )
 from buduunkhad.geospatial_ai.execution import LiveExecutionError
 from buduunkhad.geospatial_ai.path_safety import StorageRoots
+from buduunkhad.geospatial_ai.snapshots import import_phase03_snapshot_source
 from buduunkhad.pipeline import run_pipeline
 
 
 class _Phase03Provider:
     name = "openai"
 
-    def __init__(self) -> None:
+    def __init__(self, *, feature_legend_code: str = "Q") -> None:
         self.calls: list[ProviderCall] = []
+        self.feature_legend_code = feature_legend_code
 
     def execute(self, call: ProviderCall) -> ProviderExecutionResult:
         self.calls.append(call)
@@ -78,7 +83,7 @@ class _Phase03Provider:
                         "feature_id": "synthetic-geology-unit-1",
                         "layer": "geology_units",
                         "feature_type": "geology-unit",
-                        "legend_code": "Q",
+                        "legend_code": self.feature_legend_code,
                         "geometry": {
                             "type": "Polygon",
                             "coordinates": [
@@ -152,25 +157,42 @@ def _write_ai_sources(config, *, roots: StorageRoots) -> None:
     workflow = config.ai.phase03_workflow
     assert workflow is not None
     snapshot_root = roots.require_snapshot_root()
-    legend = snapshot_root / workflow.legend_source
-    legend.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.full((16, 16, 3), 128, dtype=np.uint8)).save(legend)
+    for index, source in enumerate(workflow.configured_sources):
+        legend = snapshot_root / source.legend_source
+        legend.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(np.full((512, 512, 3), 128 + index, dtype=np.uint8)).save(legend)
 
-    feature = snapshot_root / workflow.feature_source
-    feature.parent.mkdir(parents=True, exist_ok=True)
-    data = np.arange(16 * 16, dtype=np.uint8).reshape(16, 16)
-    with rasterio.open(
-        feature,
-        "w",
-        driver="GTiff",
-        width=16,
-        height=16,
-        count=1,
-        dtype="uint8",
-        crs=config.crs.target_authority,
-        transform=from_origin(500_000, 5_200_000, 10, 10),
-    ) as dataset:
-        dataset.write(data, 1)
+        feature = snapshot_root / source.feature_source
+        imported = source.feature_source.startswith("phase03-imported-sources/")
+        write_target = (
+            snapshot_root.parent / "source-fixtures" / source.source_id / feature.name
+            if imported
+            else feature
+        )
+        write_target.parent.mkdir(parents=True, exist_ok=True)
+        data = np.arange(512 * 512, dtype=np.uint8).reshape(512, 512) + index
+        with rasterio.open(
+            write_target,
+            "w",
+            driver="GTiff",
+            width=512,
+            height=512,
+            count=1,
+            dtype="uint8",
+            crs=config.crs.target_authority,
+            transform=from_origin(500_000, 5_200_000, 10, 10),
+        ) as dataset:
+            dataset.write(data, 1)
+        if imported:
+            imported_path, _authority = import_phase03_snapshot_source(
+                write_target,
+                source_id=source.source_id,
+                role="georeferenced-map",
+                imported_by="Synthetic Test Operator",
+                import_reason="Build an immutable synthetic Phase 03 source fixture.",
+                roots=roots,
+            )
+            assert imported_path == feature
 
 
 def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
@@ -205,6 +227,37 @@ def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
     assert pipeline_manifest.stopped_at == "03"
 
     existing_runs = {item.name for item in config.runs_root.iterdir() if item.is_dir()}
+    workflow = config.ai.phase03_workflow
+    assert workflow is not None
+    source_id = workflow.configured_sources[0].source_id
+    small_tiles = workflow.model_copy(
+        update={
+            "legend_tile_size": 256,
+            "legend_overlap": 0,
+            "feature_tile_size": 256,
+            "feature_overlap": 0,
+        }
+    )
+    bounded_ai = config.ai.model_copy(
+        update={
+            "phase03_workflow": small_tiles,
+            "max_input_images_per_request": 1,
+        }
+    )
+    bounded_config = config.model_copy(update={"ai": bounded_ai})
+    bounded_provider = _Phase03Provider()
+    with pytest.raises(Phase03AIFirstError, match="needs 4 images"):
+        run_phase03_ai_first(
+            bounded_config,
+            pipeline_run_id=pipeline_manifest.run_id,
+            approved_by="Synthetic Test Approver",
+            approval_note="Reject an oversized source before egress.",
+            provider=bounded_provider,
+            source_id=source_id,
+        )
+    assert bounded_provider.calls == []
+    assert {item.name for item in config.runs_root.iterdir() if item.is_dir()} == existing_runs
+
     with pytest.raises(LiveExecutionError, match="live provider execution failed"):
         run_phase03_ai_first(
             config,
@@ -212,6 +265,7 @@ def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
             approved_by="Synthetic Test Approver",
             approval_note="Offline synthetic failure attempt.",
             provider=_FailingProvider(),
+            source_id=source_id,
         )
     failed_attempts = {
         item.name for item in config.runs_root.iterdir() if item.is_dir()
@@ -225,6 +279,7 @@ def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
         approved_by="Synthetic Test Approver",
         approval_note="Offline synthetic integration test.",
         provider=provider,
+        source_id=source_id,
     )
 
     assert [call.task_type for call in provider.calls] == [
@@ -261,3 +316,112 @@ def test_ai_first_phase03_attaches_review_outputs_to_exact_pipeline_run(
     assert (run_directory / manifest.integrated_project_path).is_file()
 
     assert load_phase03_ai_first_manifest(path, roots=roots) == manifest
+
+    unknown = _Phase03Provider(feature_legend_code="UNLISTED")
+    with pytest.raises(Phase03AIFirstError, match="absent from the exact extracted legend"):
+        run_phase03_ai_first(
+            config,
+            pipeline_run_id=pipeline_manifest.run_id,
+            approved_by="Synthetic Test Approver",
+            approval_note="Offline unknown-legend regression test.",
+            provider=unknown,
+            source_id=source_id,
+        )
+    assert [call.task_type for call in unknown.calls] == [
+        TaskType.LEGEND_EXTRACTION,
+        TaskType.GEOLOGICAL_FEATURE_PROPOSAL,
+    ]
+
+
+def test_ai_first_phase03_batch_keeps_each_source_in_a_separate_attempt(
+    raw_archive, monkeypatch, request
+) -> None:
+    legacy_config, register, _raw_root = raw_archive
+    config = load_config(
+        legacy_config.base_dir / "config" / "project.yaml",
+        ai_config_path=Path("config/ai.openai.yaml"),
+    )
+    workflow = config.ai.phase03_workflow
+    assert workflow is not None
+    multi_workflow = workflow.model_copy(
+        update={
+            "legend_source": None,
+            "feature_source": None,
+            "sources": (
+                AIPhase03SourceConfig(
+                    source_id="regional-200k",
+                    legend_source="phase03/regional-legend.png",
+                    feature_source="phase03/regional-geology.tif",
+                ),
+                AIPhase03SourceConfig(
+                    source_id="local-50k",
+                    legend_source="phase03/local-legend.png",
+                    feature_source="phase03/local-geology.tif",
+                ),
+            ),
+        }
+    )
+    bounded_ai = config.ai.model_copy(update={"phase03_workflow": multi_workflow})
+    bounded_config = config.model_copy(update={"ai": bounded_ai})
+    with pytest.raises(Phase03AIFirstError, match="needs 6 requests"):
+        run_phase03_ai_first_batch(
+            bounded_config,
+            pipeline_run_id="synthetic-pipeline-run",
+            approved_by="Synthetic Test Approver",
+            approval_note="Bounded batch test.",
+            provider=_Phase03Provider(),
+        )
+
+    ai = bounded_ai.model_copy(update={"max_requests_per_run": 6, "max_cost_per_run_usd": "30.00"})
+    config = config.model_copy(update={"ai": ai})
+    short_base = (
+        Path(config.base_dir.anchor) / ".bkt_ai_batch"
+        if os.name == "nt"
+        else Path(tempfile.gettempdir()) / ".bkt_ai_batch"
+    )
+    work_root = short_base / f"w-{config.base_dir.name}"
+    snapshot_root = short_base / f"s-{config.base_dir.name}"
+    output_root = short_base / f"o-{config.base_dir.name}"
+    request.addfinalizer(lambda: shutil.rmtree(work_root, ignore_errors=True))
+    request.addfinalizer(lambda: shutil.rmtree(snapshot_root, ignore_errors=True))
+    request.addfinalizer(lambda: shutil.rmtree(output_root, ignore_errors=True))
+    monkeypatch.setenv("BUDUUNKHAD_WORK_ROOT", str(work_root))
+    monkeypatch.setenv("BUDUUNKHAD_SNAPSHOT_ROOT", str(snapshot_root))
+    monkeypatch.setenv("BUDUUNKHAD_OUTPUT_ROOT", str(output_root))
+    roots = StorageRoots.from_environment(
+        raw_root=config.raw_root,
+        project_root=config.project_root,
+    )
+    _write_ai_sources(config, roots=roots)
+    pipeline_manifest = run_pipeline(config, register, from_="00", to="03")
+    assert pipeline_manifest.error == ""
+
+    rejected_provider = _Phase03Provider()
+    with pytest.raises(Phase03AIFirstError, match="must differ"):
+        run_phase03_ai_first_batch(
+            config,
+            pipeline_run_id=pipeline_manifest.run_id,
+            batch_run_id=pipeline_manifest.run_id,
+            approved_by="Synthetic Test Approver",
+            approval_note="Reject a colliding batch identity before egress.",
+            provider=rejected_provider,
+        )
+    assert rejected_provider.calls == []
+
+    provider = _Phase03Provider()
+    path, batch = run_phase03_ai_first_batch(
+        config,
+        pipeline_run_id=pipeline_manifest.run_id,
+        approved_by="Synthetic Test Approver",
+        approval_note="Offline multi-source integration test.",
+        provider=provider,
+    )
+
+    assert len(provider.calls) == 6
+    assert tuple(item.source_id for item in batch.sessions) == (
+        "regional-200k",
+        "local-50k",
+    )
+    assert len({item.ai_run_id for item in batch.sessions}) == 2
+    assert all((config.runs_root / item.review_package_path).is_dir() for item in batch.sessions)
+    assert load_phase03_ai_batch_manifest(path, roots=roots) == batch

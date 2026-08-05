@@ -719,7 +719,10 @@ def _resolve_authority(draft: Path, *, roots: StorageRoots, run_id: str) -> _Aut
         raise Phase03HandoffError("validated response is not bound to the processed draft request")
     origin = (
         ResponseExecutionOrigin.LIVE_EXECUTION
-        if any(event.status is LedgerStatus.SUCCEEDED for event in view.events)
+        if any(
+            event.status in {LedgerStatus.SUCCEEDED, LedgerStatus.RECOVERED}
+            for event in view.events
+        )
         else ResponseExecutionOrigin.SAVED_RESPONSE
     )
     return _Authority(

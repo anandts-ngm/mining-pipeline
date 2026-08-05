@@ -79,14 +79,14 @@ class Phase00Archive(Phase):
 
         # --- real run --------------------------------------------------- #
         raw_root = ctx.raw_root
-        index = {p.name: p for p in raw_guard.iter_files(raw_root)}
+        index = raw_guard.unique_basename_index(raw_root)
 
         # 1. checksums of the originals (integrity baseline)
         self._checksums = raw_guard.build_checksum_records(raw_root)
         before = {r.relative_path: r.sha256 for r in self._checksums}
 
         # 2. working copies (parent + sidecars) into the control archive by group
-        size_by_name = {r.relative_path.split("/")[-1]: r.size_bytes for r in self._checksums}
+        checksums_by_path = {r.relative_path: r for r in self._checksums}
         inv_rows: list[dict[str, object]] = []
         copied_targets: list[Path] = []
         for rec in sorted(ctx.register, key=lambda r: r.no):
@@ -108,10 +108,17 @@ class Phase00Archive(Phase):
                     bundle = sidecars.copy_bundle(src, group_dir, overwrite=True)
                     copied_targets.extend(bundle.all_files)
                     self._copied_parents += 1
-                open_status, copy_status = "Opens", "Copied"
+                open_status, copy_status = "Present (not format-validated)", "Copied"
             inv_rows.append(
                 self._inventory_row(
-                    ctx, rec, src, working_copy, size_by_name, open_status, copy_status, source
+                    ctx,
+                    rec,
+                    src,
+                    working_copy,
+                    checksums_by_path,
+                    open_status,
+                    copy_status,
+                    source,
                 )
             )
 
@@ -157,13 +164,16 @@ class Phase00Archive(Phase):
         rec,
         src: Path | None,
         working_copy: Path,
-        size_by_name: dict[str, int],
+        checksums_by_path: dict[str, raw_guard.ChecksumRecord],
         open_status: str,
         copy_status: str,
         source: RawSource,
     ) -> dict[str, object]:
-        size_mb = round(size_by_name.get(rec.filename, 0) / (1024 * 1024), 4)
-        checksum = next((c.sha256 for c in self._checksums if c.filename == rec.filename), "")
+        source_record = (
+            checksums_by_path.get(src.relative_to(ctx.raw_root).as_posix()) if src else None
+        )
+        size_mb = round((source_record.size_bytes if source_record else 0) / (1024 * 1024), 4)
+        checksum = source_record.sha256 if source_record else ""
         return {
             "no": rec.no,
             "evidence_group": rec.evidence_group,
@@ -260,10 +270,10 @@ class Phase00Archive(Phase):
             return report
 
         report.add(
-            "Checksum match",
+            "Checksum baseline written",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS if self._checksums else Decision.FAIL,
-            note=f"{len(self._checksums)} files checksummed.",
+            note=f"{len(self._checksums)} files checksummed; later runs perform baseline comparison.",
         )
         report.add(
             "Raw overwrite not done",

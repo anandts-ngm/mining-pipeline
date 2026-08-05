@@ -25,7 +25,7 @@ from buduunkhad.geospatial_ai.methodology import (
 )
 from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 73)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 76)}
 METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
@@ -287,6 +287,7 @@ def test_repository_methodology_copies_match_the_exact_policy_catalog() -> None:
 
     by_id = {source.source_id: source for source in authority.sources}
     assert by_id["methodology.master-v5-v6"].authority_status == "obsolete"
+    assert by_id["methodology.master-v5-v6"].repository_copy is None
     assert by_id["phase02.aster-sop"].authority_status == "obsolete"
     assert by_id["phase05.guide"].authority_status == "reference-only"
     for source_id in (
@@ -295,6 +296,7 @@ def test_repository_methodology_copies_match_the_exact_policy_catalog() -> None:
         "phase02.dem-qgis402-guide",
     ):
         assert by_id[source_id].authority_status == "reference-only"
+        assert by_id[source_id].repository_copy is None
     for phase in ("06", "07", "08", "09", "10", "11", "99"):
         assert by_id[f"phase{phase}.guide"].authority_status == "pending-review"
 
@@ -359,7 +361,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 73)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 76)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies
@@ -680,6 +682,65 @@ def test_phase_source_references_fail_closed_when_unknown(tmp_path: Path) -> Non
         load_phase_methodology_from_checkout(tmp_path, "00")
 
 
+def test_phase00_03_coverage_binds_every_requirement_to_real_code_and_tests() -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    for phase_id in ("00", "01", "02", "03"):
+        phase = load_phase_methodology(phase_id)
+        assert phase.format_version == "1.1.0"
+        covered = {
+            requirement_id
+            for item in phase.implementation_coverage
+            for requirement_id in item.requirement_ids
+        }
+        assert covered == {item.requirement_id for item in phase.requirements}
+        for item in phase.implementation_coverage:
+            assert item.master_refs
+            assert item.adopted_behavior
+            assert item.output_refs
+            assert item.qaqc_checks
+            for reference in (*item.implementation_refs, *item.test_refs):
+                path_text, _, symbol = reference.partition("::")
+                path = repository_root / path_text
+                assert path.is_file() and not path.is_symlink(), reference
+                source = path.read_text(encoding="utf-8")
+                leaf = symbol.rsplit(".", maxsplit=1)[-1]
+                assert f"def {leaf}(" in source or f"class {leaf}(" in source, reference
+
+
+def test_phase_coverage_rejects_unknown_requirement_binding(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    methodology = tmp_path / "config" / "methodology"
+    shutil.copytree(repository_root / "config" / "methodology", methodology)
+    phase = methodology / "phase00.yaml"
+    phase.write_text(
+        phase.read_text(encoding="utf-8").replace(
+            "requirement_ids: [P00-REGISTERED-INVENTORY-001]",
+            "requirement_ids: [P00-UNKNOWN-001]",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(MethodologyError, match="unknown requirements"):
+        load_phase_methodology_from_checkout(tmp_path, "00")
+
+
+def test_phase_coverage_cannot_adopt_obsolete_guide_detail(tmp_path: Path) -> None:
+    repository_root = Path(__file__).resolve().parents[1]
+    methodology = tmp_path / "config" / "methodology"
+    shutil.copytree(repository_root / "config" / "methodology", methodology)
+    phase = methodology / "phase00.yaml"
+    phase.write_text(
+        phase.read_text(encoding="utf-8").replace(
+            "phase01.guide::4.Alham 1.Raw archive protection and working copy",
+            "phase02.aster-sop::8.ASTER workflow",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(MethodologyError, match="non-adoptable detailed sources"):
+        load_phase_methodology_from_checkout(tmp_path, "00")
+
+
 def test_readme_describes_current_phase_maturity_and_authority_location() -> None:
     repository_root = Path(__file__).resolve().parents[1]
     readme = (repository_root / "README.txt").read_text(encoding="utf-8")
@@ -803,12 +864,33 @@ def test_phase02_processing_decisions_are_exact_and_support_only() -> None:
 
     contract = load_phase02_processing_contract()
     assert contract.scientific_use == "support-evidence-only"
-    assert contract.format_version == "1.1.0"
-    assert contract.decision_sources == ("METH-DISC-052", "METH-DISC-053", "METH-DISC-071")
+    assert contract.format_version == "1.3.0"
+    assert contract.decision_sources == (
+        "METH-DISC-052",
+        "METH-DISC-053",
+        "METH-DISC-071",
+        "METH-DISC-073",
+        "METH-DISC-074",
+    )
     sentinel = contract.sentinel_profile
     assert sentinel.input_numbers == (74, 77, 78)
     assert sentinel.operation == "reproject-and-clip"
     assert sentinel.clip_buffer_m == 1000
+    safe = contract.supplementary_sentinel_safe
+    assert safe.source_sha256 == "8c1134357c149e76921cc275636f2d82608cacfd88d85d55d882a1f27bcf62eb"
+    assert safe.source_size_bytes == 1098751535
+    assert safe.target_resolution_m == 10
+    assert safe.clip_buffer_m == 1000
+    kompsat = contract.kompsat_profile
+    assert kompsat.input_numbers == (24, 28, 32, 36, 40)
+    assert kompsat.rpc_dem_input_number == 12
+    assert kompsat.clip_buffer_m == 1000
+    assert kompsat.pan_resolution_m == 1.0
+    assert kompsat.multispectral_resolution_m == 4.0
+    assert kompsat.multispectral_band_order == ("BLUE", "GREEN", "RED", "NIR")
+    assert kompsat.pansharpen_method == "Brovey-RGB"
+    assert not kompsat.external_egress_allowed
+    assert not kompsat.external_publication_allowed
     basemaps = {item.input_number: item for item in contract.basemap_assets}
     assert basemaps[75].operation == "reproject-full-extent"
     assert basemaps[75].clip_buffer_m is None

@@ -29,10 +29,6 @@ sources:
     role: methodology-source
     authority_status: obsolete
     expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_Phasewise_File_Processing_Output_Matrix.docx
-    repository_copy: docs/methodology/master/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_Phasewise_File_Processing_Output_Matrix.docx
-    repository_copy_sha256: 2b27b9035b24e2239caa8ce0b345969bf23f7d1d0beb69c3f6f4f2a0fe7cd996
-    repository_copy_size_bytes: 339386
-    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 13Rle5Bgj0vuKXeXnyy-mT5iLvzwvtloI
     existence_verified: true
     existence_verified_at: "2026-07-20T03:14:02Z"
@@ -79,10 +75,6 @@ sources:
     role: operator-sop
     authority_status: reference-only
     expected_document: XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx
-    repository_copy: docs/methodology/phase_02/operator_guides/XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx
-    repository_copy_sha256: 98ecf4defac3058f474d78ffa5ca2acda25e561688714bd045f27ebe66ff2fe2
-    repository_copy_size_bytes: 1120963
-    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1HDS0TItrqcyBmx-q7WbVS-rTibvqh347
     existence_verified: true
     existence_verified_at: "2026-07-20T03:14:02Z"
@@ -93,10 +85,6 @@ sources:
     role: operator-sop
     authority_status: reference-only
     expected_document: QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx
-    repository_copy: docs/methodology/phase_02/operator_guides/QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx
-    repository_copy_sha256: 1c6380686574e2bc92558bcf6dc787d07454ec092de0ee47268a30ce633ebaaf
-    repository_copy_size_bytes: 46281
-    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1sVmEgKaNWbsh9xEFQAuTy-THZYbHzMCA
     existence_verified: true
     existence_verified_at: "2026-07-20T03:14:02Z"
@@ -107,10 +95,6 @@ sources:
     role: operator-sop
     authority_status: reference-only
     expected_document: XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx
-    repository_copy: docs/methodology/phase_02/operator_guides/XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx
-    repository_copy_sha256: 84f809fef429bb0279bbd67f036fbaa0e03a70427a827f8139284f4190b5f081
-    repository_copy_size_bytes: 50688
-    repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1hc6mZrqSX1Jt-rUsRcp0XtIHGAckH3Xn
     existence_verified: true
     existence_verified_at: "2026-07-20T03:14:02Z"

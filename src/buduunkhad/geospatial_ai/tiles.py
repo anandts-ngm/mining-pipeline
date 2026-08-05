@@ -105,6 +105,16 @@ def _starts(length: int, tile_size: int, overlap: int) -> tuple[int, ...]:
     return tuple(range(0, length, step))
 
 
+def planned_tile_count(*, width: int, height: int, parameters: TileParameters) -> int:
+    """Return the exact number of image attachments the deterministic tiler will create."""
+
+    if width < 1 or height < 1:
+        raise ValueError("source dimensions must be positive")
+    return len(_starts(width, parameters.width, parameters.overlap)) * len(
+        _starts(height, parameters.height, parameters.overlap)
+    )
+
+
 def tile_identity(
     *,
     source_sha256: str,

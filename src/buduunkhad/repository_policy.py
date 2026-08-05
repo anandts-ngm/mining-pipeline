@@ -167,28 +167,11 @@ APPROVED_METHODOLOGY_DOCUMENTS: Mapping[PurePosixPath, str] = MappingProxyType(
             "Clickable_TOC_PageNumbers.docx"
         ): "86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e",
         PurePosixPath(
-            "docs/methodology/master/"
-            "XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v6_"
-            "Phasewise_File_Processing_Output_Matrix.docx"
-        ): "2b27b9035b24e2239caa8ce0b345969bf23f7d1d0beb69c3f6f4f2a0fe7cd996",
-        PurePosixPath(
             "docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx"
         ): "99bb2d59fc649701c9aa5656e40fc7c2a220ab6ccfe2a343c0a1831d40123349",
         PurePosixPath(
             "docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx"
         ): "77d194c1914b463486bda553e0303d865b0742e5847a81d4e9da85abea4590f2",
-        PurePosixPath(
-            "docs/methodology/phase_02/operator_guides/"
-            "XV023222_Buduunkhad_Sentinel2_QGIS402_Detailed_Guide_v01.docx"
-        ): "98ecf4defac3058f474d78ffa5ca2acda25e561688714bd045f27ebe66ff2fe2",
-        PurePosixPath(
-            "docs/methodology/phase_02/operator_guides/"
-            "QGIS_4_0_2_Google_HighResolution_Basemap_Detailed_Guide.docx"
-        ): "1c6380686574e2bc92558bcf6dc787d07454ec092de0ee47268a30ce633ebaaf",
-        PurePosixPath(
-            "docs/methodology/phase_02/operator_guides/"
-            "XV023222_Buduunkhad_QGIS402_DEM_ALOS_PALSAR_ASTERGDEM_Detailed_Guide.docx"
-        ): "84f809fef429bb0279bbd67f036fbaa0e03a70427a827f8139284f4190b5f081",
         PurePosixPath(
             "docs/methodology/phase_03/"
             "Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx"

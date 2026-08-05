@@ -8,6 +8,7 @@ from pathlib import Path
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _MAX_ENV_BYTES = 64 * 1024
+_ALLOWED_NAMES = frozenset({"OPENAI_API_KEY", "ANTHROPIC_API_KEY"})
 
 
 class LocalEnvError(RuntimeError):
@@ -41,6 +42,10 @@ def load_repository_env(config_path: Path | str) -> Path | None:
         name = name.strip()
         if separator != "=" or not _ENV_NAME.fullmatch(name):
             raise LocalEnvError(f"repository .env line {line_number} is malformed")
+        if name not in _ALLOWED_NAMES:
+            raise LocalEnvError(
+                f"repository .env variable {name} is unsupported; only provider credentials belong here"
+            )
         if name in values:
             raise LocalEnvError(f"repository .env repeats {name}")
         values[name] = _parse_value(raw_value, line_number=line_number)

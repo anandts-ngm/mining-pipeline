@@ -31,7 +31,7 @@ from buduunkhad.core.georeference import load_georeference_acceptance
 from buduunkhad.core.run_artifacts import sha256_file
 from buduunkhad.core.run_storage import SourcePhaseBinding, resolve_source_phase, validate_run_id
 
-DEPOSIT_MODEL_ASSESSMENT_FORMAT_VERSION = "1.0.0"
+DEPOSIT_MODEL_ASSESSMENT_FORMAT_VERSION = "1.1.0"
 DEPOSIT_MODEL_CRITIQUE_FORMAT_VERSION = "1.0.0"
 DEPOSIT_MODEL_REVIEW_FORMAT_VERSION = "1.0.0"
 PHASE03_HANDOFF_FORMAT_VERSION = "1.0.0"
@@ -43,6 +43,21 @@ PHASE03_REQUIRED_EVIDENCE_ROLES = frozenset(
         EvidenceRole.OCCURRENCE,
         EvidenceRole.ALTERATION_SUPPORT,
     }
+)
+
+DEPOSIT_MODEL_SCORING_CRITERIA: tuple[tuple[str, str, int], ...] = (
+    ("favorable-geology", "Favorable geology / host lithology", 20),
+    ("structure-contact", "Intrusive / contact / structure control", 15),
+    ("known-occurrence", "Known mineral occurrence", 15),
+    (
+        "historical-geochemistry",
+        "Historical geochemistry / shlich / stream sediment",
+        15,
+    ),
+    ("metallogenic-context", "Metallogenic context", 10),
+    ("remote-sensing-alteration", "ASTER/Sentinel alteration support", 10),
+    ("field-pxrf", "Field mapping / pXRF support", 10),
+    ("access-workability", "Access / workability", 5),
 )
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -107,8 +122,32 @@ class DepositModelEvidenceGroup(_StrictModel):
         return self
 
 
+class DepositModelCriterionScore(_StrictModel):
+    """One explicit row of the adopted 100-point 03A rubric."""
+
+    criterion_id: NonEmpty
+    criterion: NonEmpty
+    max_points: int = Field(gt=0)
+    proposed_points: float = Field(ge=0)
+    evidence_ids: tuple[NonEmpty, ...] = ()
+    rationale: NonEmpty
+    missing: bool
+
+    @model_validator(mode="after")
+    def _truthful_score(self) -> DepositModelCriterionScore:
+        if self.proposed_points > self.max_points:
+            raise ValueError("deposit-model criterion score exceeds its maximum")
+        if tuple(sorted(set(self.evidence_ids))) != self.evidence_ids:
+            raise ValueError("criterion evidence IDs must be unique and ordered")
+        if self.missing and (self.proposed_points != 0 or self.evidence_ids):
+            raise ValueError("missing deposit-model criteria must score zero with no evidence")
+        if self.proposed_points > 0 and not self.evidence_ids:
+            raise ValueError("positive deposit-model criterion scores require exact evidence IDs")
+        return self
+
+
 class _DepositModelAssessmentIdentity(_StrictModel):
-    format_version: Literal["1.0.0"] = DEPOSIT_MODEL_ASSESSMENT_FORMAT_VERSION
+    format_version: Literal["1.0.0", "1.1.0"] = DEPOSIT_MODEL_ASSESSMENT_FORMAT_VERSION
     phase03_run_id: NonEmpty
     candidate_model: NonEmpty
     evidence_manifest_bindings: tuple[EvidenceManifestBinding, ...] = Field(min_length=1)
@@ -118,6 +157,7 @@ class _DepositModelAssessmentIdentity(_StrictModel):
     confidence_basis: NonEmpty
     limitations: tuple[NonEmpty, ...] = Field(min_length=1)
     recommended_validation: tuple[NonEmpty, ...] = Field(min_length=1)
+    criterion_scores: tuple[DepositModelCriterionScore, ...] = ()
     draft_score: float | None = Field(default=None, ge=0, le=100)
     proposing_job_id: NonEmpty | None = None
     proposing_response_id: NonEmpty | None = None
@@ -152,6 +192,32 @@ class _DepositModelAssessmentIdentity(_StrictModel):
             raise ValueError("deposit-model assessment requires supporting evidence")
         if (self.proposing_job_id is None) != (self.proposing_response_id is None):
             raise ValueError("AI proposal job and response identities must be paired")
+        if self.format_version == "1.0.0":
+            if self.criterion_scores:
+                raise ValueError("legacy deposit-model assessments cannot contain criterion scores")
+        else:
+            expected = tuple(item[0] for item in DEPOSIT_MODEL_SCORING_CRITERIA)
+            actual = tuple(item.criterion_id for item in self.criterion_scores)
+            if actual != expected:
+                raise ValueError(
+                    "deposit-model assessment requires the exact eight-criterion rubric"
+                )
+            for score, (criterion_id, criterion, maximum) in zip(
+                self.criterion_scores,
+                DEPOSIT_MODEL_SCORING_CRITERIA,
+                strict=True,
+            ):
+                if (
+                    score.criterion_id != criterion_id
+                    or score.criterion != criterion
+                    or score.max_points != maximum
+                ):
+                    raise ValueError("deposit-model criterion identity or maximum is incorrect")
+                if not set(score.evidence_ids) <= set(self.selected_evidence_ids):
+                    raise ValueError("criterion score cites evidence outside the assessment")
+            total = sum(item.proposed_points for item in self.criterion_scores)
+            if self.draft_score is None or not abs(total - self.draft_score) <= 1e-9:
+                raise ValueError("deposit-model draft score must equal the criterion total")
         for values, description in (
             (self.missing_evidence, "missing evidence"),
             (self.limitations, "limitations"),
@@ -407,6 +473,7 @@ def create_deposit_model_assessment(
     confidence_basis: str,
     limitations: tuple[str, ...],
     recommended_validation: tuple[str, ...],
+    criterion_scores: tuple[DepositModelCriterionScore, ...],
     draft_score: float | None = None,
     proposing_job_id: str | None = None,
     proposing_response_id: str | None = None,
@@ -428,6 +495,11 @@ def create_deposit_model_assessment(
             raise Phase03ScienceError(
                 f"deposit-model evidence is not accepted for Phase 03: {evidence_id}"
             )
+    effective_score = (
+        sum(item.proposed_points for item in criterion_scores)
+        if draft_score is None
+        else draft_score
+    )
     return DepositModelAssessment.create(
         phase03_run_id=phase03_run_id,
         candidate_model=candidate_model,
@@ -438,7 +510,8 @@ def create_deposit_model_assessment(
         confidence_basis=confidence_basis,
         limitations=tuple(sorted(set(limitations))),
         recommended_validation=tuple(sorted(set(recommended_validation))),
-        draft_score=draft_score,
+        criterion_scores=criterion_scores,
+        draft_score=effective_score,
         proposing_job_id=proposing_job_id,
         proposing_response_id=proposing_response_id,
     )
@@ -672,6 +745,110 @@ def write_phase03_science_record(
             raise Phase03ScienceError("Phase 03 science record already exists and differs")
         return target
     target.write_text(payload, encoding="utf-8", newline="\n")
+    return target
+
+
+def write_deposit_model_assessment_workbook(
+    assessment: DepositModelAssessment,
+    path: Path,
+) -> Path:
+    """Render the sealed assessment into the guide-aligned review workbook."""
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    target = Path(path)
+    if target.exists():
+        raise Phase03ScienceError("deposit-model workbook output already exists")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    workbook = Workbook()
+    summary = workbook.active
+    assert summary is not None
+    summary.title = "Assessment"
+    summary_rows = (
+        ("assessment_id", assessment.assessment_id),
+        ("phase03_run_id", assessment.phase03_run_id),
+        ("candidate_model", assessment.candidate_model),
+        ("draft_score", assessment.draft_score),
+        ("confidence_basis", assessment.confidence_basis),
+        ("proposing_job_id", assessment.proposing_job_id or ""),
+        ("proposing_response_id", assessment.proposing_response_id or ""),
+    )
+    summary.append(("field", "value"))
+    for row in summary_rows:
+        summary.append(row)
+
+    scores = workbook.create_sheet("Criterion Scores")
+    score_columns = (
+        "criterion_id",
+        "criterion",
+        "max_points",
+        "proposed_points",
+        "evidence_ids",
+        "missing",
+        "rationale",
+    )
+    scores.append(score_columns)
+    for item in assessment.criterion_scores:
+        scores.append(
+            (
+                item.criterion_id,
+                item.criterion,
+                item.max_points,
+                item.proposed_points,
+                "; ".join(item.evidence_ids),
+                item.missing,
+                item.rationale,
+            )
+        )
+    scores.append(("total", "Total", 100, assessment.draft_score, "", "", ""))
+
+    groups = workbook.create_sheet("Evidence Groups")
+    group_columns = (
+        "group_id",
+        "relationship",
+        "evidence_ids",
+        "source_scale",
+        "source_date",
+        "correlation_basis",
+        "counted_once",
+        "confidence_basis",
+        "limitations",
+    )
+    groups.append(group_columns)
+    for item in assessment.evidence_groups:
+        groups.append(
+            (
+                item.group_id,
+                item.relationship.value,
+                "; ".join(item.evidence_ids),
+                item.source_scale,
+                item.source_date,
+                item.correlation_basis,
+                item.counted_once,
+                item.confidence_basis,
+                "; ".join(item.limitations),
+            )
+        )
+
+    gaps = workbook.create_sheet("Gaps and Validation")
+    gaps.append(("category", "value"))
+    for category, values in (
+        ("missing_evidence", assessment.missing_evidence),
+        ("limitation", assessment.limitations),
+        ("recommended_validation", assessment.recommended_validation),
+    ):
+        for value in values:
+            gaps.append((category, value))
+
+    for sheet in workbook.worksheets:
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        sheet.freeze_panes = "A2"
+        for column in sheet.columns:
+            values = (len(str(cell.value or "")) for cell in column)
+            sheet.column_dimensions[column[0].column_letter].width = min(max(values) + 2, 60)
+    workbook.save(target)
     return target
 
 

@@ -52,7 +52,7 @@ _PROJECT_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 class InputRecord(BaseModel):
     """One of the 79 raw input files."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     no: int = Field(..., ge=1)
     evidence_group: str
@@ -77,6 +77,8 @@ class InputRecord(BaseModel):
 
 
 class ProjectMeta(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     project_code: str
     license_code: str
@@ -106,6 +108,8 @@ class ProjectMeta(BaseModel):
 
 
 class CRSConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     target_epsg: int
     target_name: str
     source_geographic_epsg: int = 4326
@@ -116,33 +120,45 @@ class CRSConfig(BaseModel):
 
 
 class PathsConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     raw_root: Path
     output_root: Path
     runs_root: Path
 
 
 class RegisterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     path: Path
 
 
 class RawManifestConfig(BaseModel):
     """Optional manifest pinning each raw input to its canonical Drive file ID."""
 
+    model_config = ConfigDict(extra="forbid")
+
     path: Path
 
 
 class BoundaryConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     input_no: int = 8
     buffers_m: list[int] = Field(default_factory=lambda: [500, 1000, 5000, 10000, 20000, 25000])
 
 
 class EvidenceGroup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     group_no: int
     name: str
     count: int
 
 
 class GpkgLayer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     geometry: str  # "Point" | "LineString" | "Polygon" | "None"
 
@@ -152,6 +168,8 @@ class GpkgLayer(BaseModel):
 
 
 class VersioningConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     default_version: int = 1
     draft_suffix: str = "_DRAFT"
 
@@ -264,11 +282,29 @@ class AIReviewPolicyConfig(_ValidatedAIConfigModel):
     production_geometry_requires_approval: bool = True
 
 
+class AIPhase03SourceConfig(_ValidatedAIConfigModel):
+    """One approved legend/raster pair in a multi-source Phase 03 workflow."""
+
+    source_id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,63}$")
+    legend_source: str
+    feature_source: str
+
+    @field_validator("legend_source", "feature_source")
+    @classmethod
+    def _portable_snapshot_path(cls, value: str) -> str:
+        normalized = value.strip()
+        path = Path(normalized)
+        if not normalized or path.is_absolute() or "\\" in normalized or ".." in path.parts:
+            raise ValueError("AI Phase 03 sources must be portable paths below the snapshot root")
+        return path.as_posix()
+
+
 class AIPhase03WorkflowConfig(_ValidatedAIConfigModel):
     """Exact Phase 03 sources and bounded request settings for an AI-first run."""
 
-    legend_source: str
-    feature_source: str
+    legend_source: str | None = None
+    feature_source: str | None = None
+    sources: tuple[AIPhase03SourceConfig, ...] = ()
     legend_tile_size: int = Field(default=4096, ge=256, le=8192)
     legend_overlap: int = Field(default=256, ge=0)
     feature_tile_size: int = Field(default=1536, ge=256, le=4096)
@@ -279,7 +315,9 @@ class AIPhase03WorkflowConfig(_ValidatedAIConfigModel):
 
     @field_validator("legend_source", "feature_source")
     @classmethod
-    def _portable_snapshot_path(cls, value: str) -> str:
+    def _portable_snapshot_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip()
         path = Path(normalized)
         if not normalized or path.is_absolute() or "\\" in normalized or ".." in path.parts:
@@ -292,7 +330,40 @@ class AIPhase03WorkflowConfig(_ValidatedAIConfigModel):
             raise ValueError("legend tile overlap must be smaller than the tile size")
         if self.feature_overlap >= self.feature_tile_size:
             raise ValueError("feature tile overlap must be smaller than the tile size")
+        legacy_pair = self.legend_source is not None and self.feature_source is not None
+        partial_legacy_pair = (self.legend_source is None) != (self.feature_source is None)
+        if partial_legacy_pair:
+            raise ValueError("legacy Phase 03 AI source fields must be supplied together")
+        if bool(self.sources) == legacy_pair:
+            raise ValueError("configure either one legacy source pair or a non-empty sources list")
+        source_ids = tuple(item.source_id for item in self.sources)
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("Phase 03 AI source IDs must be unique")
         return self
+
+    @property
+    def configured_sources(self) -> tuple[AIPhase03SourceConfig, ...]:
+        if self.sources:
+            return self.sources
+        assert self.legend_source is not None and self.feature_source is not None
+        return (
+            AIPhase03SourceConfig(
+                source_id="default",
+                legend_source=self.legend_source,
+                feature_source=self.feature_source,
+            ),
+        )
+
+    def source(self, source_id: str | None = None) -> AIPhase03SourceConfig:
+        sources = self.configured_sources
+        if source_id is None:
+            if len(sources) != 1:
+                raise ValueError("multiple Phase 03 AI sources require an explicit source ID")
+            return sources[0]
+        for source in sources:
+            if source.source_id == source_id:
+                return source
+        raise ValueError(f"unknown Phase 03 AI source ID: {source_id}")
 
 
 class AIConfig(_ValidatedAIConfigModel):
@@ -310,6 +381,8 @@ class AIConfig(_ValidatedAIConfigModel):
     request_timeout_seconds: float = Field(default=120.0, gt=0, le=3600)
     max_output_tokens: int = Field(default=4096, ge=1)
     max_requests_per_run: int = Field(default=1, ge=1)
+    max_input_images_per_request: int = Field(default=32, ge=1, le=500)
+    max_input_bytes_per_request: int = Field(default=100_000_000, ge=1)
     max_cost_per_run_usd: Decimal = Field(default=Decimal("0"), ge=0)
     concurrency: int = Field(default=1, ge=1)
     source_egress_policy: SourceEgressPolicy = SourceEgressPolicy.DENY
@@ -377,7 +450,9 @@ class ProjectConfig(BaseModel):
     config resolve against ``base_dir`` (the repo root, parent of ``config/``).
     """
 
-    model_config = ConfigDict(validate_assignment=True, revalidate_instances="always")
+    model_config = ConfigDict(
+        extra="forbid", validate_assignment=True, revalidate_instances="always"
+    )
 
     project: ProjectMeta
     crs: CRSConfig

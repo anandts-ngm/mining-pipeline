@@ -79,6 +79,29 @@ def iter_files(root: Path) -> Iterator[Path]:
     yield from sorted(p for p in Path(root).rglob("*") if p.is_file())
 
 
+def unique_basename_index(raw_root: Path) -> dict[str, Path]:
+    """Resolve one raw path per basename, rejecting an ambiguous archive."""
+
+    root = Path(raw_root)
+    if not root.is_dir():
+        return {}
+    grouped: dict[str, list[Path]] = {}
+    for path in iter_files(root):
+        grouped.setdefault(path.name.casefold(), []).append(path)
+    collisions = {name: paths for name, paths in grouped.items() if len(paths) > 1}
+    if collisions:
+        examples = []
+        for paths in list(collisions.values())[:10]:
+            relative = sorted(path.relative_to(root).as_posix() for path in paths)
+            examples.append(f"{paths[0].name}: {', '.join(relative)}")
+        suffix = "" if len(collisions) <= 10 else f"; plus {len(collisions) - 10} more"
+        raise RawIntegrityError(
+            "raw archive contains duplicate basenames and cannot bind registered inputs "
+            f"unambiguously ({len(collisions)} collision(s)): {'; '.join(examples)}{suffix}"
+        )
+    return {paths[0].name: paths[0] for paths in grouped.values()}
+
+
 def build_checksum_records(raw_root: Path) -> list[ChecksumRecord]:
     """Compute checksum records for every file currently in the raw archive."""
     raw_root = Path(raw_root)

@@ -20,7 +20,11 @@ from buduunkhad.ai.providers.base import (
     validate_provider_output_contract,
 )
 from buduunkhad.geospatial_ai.ledger import AIJobLedger, LedgerStatus
-from buduunkhad.geospatial_ai.manifests import SavedProviderResponse, ValidatedResponseRecord
+from buduunkhad.geospatial_ai.manifests import (
+    ResponseOrigin,
+    SavedProviderResponse,
+    ValidatedResponseRecord,
+)
 from buduunkhad.geospatial_ai.path_safety import StorageRoots
 from buduunkhad.geospatial_ai.requests import (
     load_request_package,
@@ -39,6 +43,7 @@ def ingest_saved_response(
     *,
     roots: StorageRoots,
     now: datetime | None = None,
+    recover_late_response: bool = False,
 ) -> tuple[Path, ValidatedResponseRecord]:
     package_directory = roots.assert_run_artifact(package_directory)
     package = load_request_package(package_directory)
@@ -84,7 +89,31 @@ def ingest_saved_response(
         run_directory / "ai_jobs.sqlite", roots=roots, run_id=package.request.run_id
     )
     view = validate_package_ledger(package, ledger, package_directory)
-    if view.status not in {LedgerStatus.PREPARED, LedgerStatus.SUCCEEDED}:
+    if view.status is LedgerStatus.FAILED and recover_late_response:
+        if response.origin is not ResponseOrigin.LIVE_EXECUTION:
+            raise ResponseIngestionError(
+                "late response recovery requires a locally executed provider response"
+            )
+        if view.failed_at is None or response.received_at <= view.failed_at:
+            raise ResponseIngestionError(
+                "late provider response must postdate the recorded local timeout"
+            )
+        try:
+            view = ledger.transition(
+                package.request.job_id,
+                LedgerStatus.RECOVERED,
+                occurred_at=validated_at,
+                response_file=response_path.relative_to(run_directory).as_posix(),
+                response_sha256=sha256_file(response_path),
+                usage=response.usage,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ResponseIngestionError("late provider response cannot be reconciled") from exc
+    if view.status not in {
+        LedgerStatus.PREPARED,
+        LedgerStatus.SUCCEEDED,
+        LedgerStatus.RECOVERED,
+    }:
         raise ResponseIngestionError(f"job cannot ingest a response from state {view.status.value}")
     if validated_at < view.events[-1].occurred_at:
         raise ResponseIngestionError("response ingestion predates the current job state")

@@ -8,7 +8,7 @@ import sys
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import cast
+from typing import Never, cast
 
 import fiona
 import numpy as np
@@ -29,7 +29,9 @@ from buduunkhad.ai.contracts import (
 from buduunkhad.ai.fingerprint import request_fingerprint, sha256_file, sha256_value
 from buduunkhad.ai.prompts import PromptRegistry, default_schema_registry
 from buduunkhad.ai.providers import (
+    ProviderCall,
     ProviderCredentialError,
+    ProviderExecutionError,
 )
 from buduunkhad.ai.schema_identity import SEMANTIC_SCHEMA_FINGERPRINT_ALGORITHM
 from buduunkhad.config import (
@@ -1086,6 +1088,113 @@ def test_live_key_absence_blocks_only_execute(
     assert ledger.inspect(package.request.job_id).status is LedgerStatus.FAILED
 
 
+@pytest.mark.parametrize(
+    ("run_id", "config_update", "message"),
+    (
+        ("bound-images", {"max_input_images_per_request": 1}, "contains 4 images"),
+        ("bound-bytes", {"max_input_bytes_per_request": 1}, "estimated input bytes"),
+    ),
+)
+def test_live_execution_rejects_oversized_input_before_provider_or_ledger_transition(
+    ai_roots: StorageRoots,
+    run_id: str,
+    config_update: dict[str, int],
+    message: str,
+) -> None:
+    approved = EgressDecision(
+        status=EgressDecisionStatus.APPROVED,
+        approved_by="egress-reviewer",
+        approved_at=datetime(2026, 7, 15, tzinfo=UTC),
+        note="Synthetic fixture approved for bounded-input testing.",
+    )
+    package_directory, package = _prepare(
+        ai_roots,
+        run_id=run_id,
+        egress=approved,
+    )
+    config = AIConfig(
+        profile=ExecutionProfile.HYBRID,
+        enabled=True,
+        provider=AIProviderSelection.OPENAI,
+        provider_model="synthetic-model",
+        reasoning_effort=ReasoningEffort.HIGH,
+        external_data_allowed=True,
+        max_cost_per_run_usd=Decimal("1"),
+        source_egress_policy=SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL,
+        **config_update,
+    )
+    provider = CapturingLiveProvider(
+        CanonicalJSONValue.from_value({}),
+        created_at=datetime(2026, 7, 15, 0, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(LiveExecutionError, match=message):
+        execute_request_package(
+            package_directory,
+            config=config,
+            roots=ai_roots,
+            provider=provider,
+        )
+
+    assert provider.call is None
+    ledger = AIJobLedger(
+        ai_roots.run_directory(package.request.run_id) / "ai_jobs.sqlite",
+        roots=ai_roots,
+        run_id=package.request.run_id,
+    )
+    assert ledger.inspect(package.request.job_id).status is LedgerStatus.PREPARED
+
+
+def test_provider_error_category_is_preserved_in_the_execution_ledger(
+    ai_roots: StorageRoots,
+) -> None:
+    class RejectedProvider:
+        name = "openai"
+
+        def execute(self, call: ProviderCall) -> Never:
+            del call
+            raise ProviderExecutionError("openai", "BadRequestError", "schema rejected")
+
+    approved = EgressDecision(
+        status=EgressDecisionStatus.APPROVED,
+        approved_by="egress-reviewer",
+        approved_at=datetime(2026, 7, 15, tzinfo=UTC),
+        note="Synthetic fixture approved for adapter testing.",
+    )
+    package_directory, package = _prepare(
+        ai_roots,
+        run_id="provider-error-category-run",
+        egress=approved,
+    )
+    config = AIConfig(
+        profile=ExecutionProfile.HYBRID,
+        enabled=True,
+        provider=AIProviderSelection.OPENAI,
+        provider_model="synthetic-model",
+        reasoning_effort=ReasoningEffort.HIGH,
+        external_data_allowed=True,
+        max_cost_per_run_usd=Decimal("1"),
+        source_egress_policy=SourceEgressPolicy.REQUIRE_EXPLICIT_APPROVAL,
+    )
+
+    with pytest.raises(ProviderExecutionError, match="BadRequestError"):
+        execute_request_package(
+            package_directory,
+            config=config,
+            roots=ai_roots,
+            provider=RejectedProvider(),
+        )
+
+    ledger = AIJobLedger(
+        ai_roots.run_directory("provider-error-category-run") / "ai_jobs.sqlite",
+        roots=ai_roots,
+        run_id="provider-error-category-run",
+    )
+    assert ledger.inspect(package.request.job_id).events[-1].error_category == (
+        "openai:BadRequestError"
+    )
+
+
 def test_injected_live_boundary_receives_exact_source_context_and_stays_keyless(
     ai_roots: StorageRoots,
     monkeypatch: pytest.MonkeyPatch,
@@ -1176,6 +1285,55 @@ def test_live_execution_rejects_reasoning_effort_changed_after_package_approval(
 
     with pytest.raises(LiveExecutionError, match="reasoning effort differs"):
         execute_request_package(package_directory, config=config, roots=ai_roots)
+
+
+def test_late_live_response_can_be_reconciled_after_local_command_timeout(
+    ai_roots: StorageRoots,
+) -> None:
+    package_directory, package = _prepare(ai_roots, run_id="late-response-run")
+    ledger = AIJobLedger(
+        ai_roots.run_directory("late-response-run") / "ai_jobs.sqlite",
+        roots=ai_roots,
+        run_id="late-response-run",
+    )
+    ledger.transition(
+        package.request.job_id,
+        LedgerStatus.RUNNING,
+        occurred_at=datetime(2026, 7, 15, 0, 0, 10, tzinfo=UTC),
+    )
+    ledger.transition(
+        package.request.job_id,
+        LedgerStatus.FAILED,
+        occurred_at=datetime(2026, 7, 15, 0, 0, 30, tzinfo=UTC),
+        error_category="LocalCommandTimeout",
+    )
+    response_path = _saved_response(
+        package,
+        ai_roots.run_directory("late-response-run")
+        / "responses"
+        / f"{package.request.job_id}.json",
+    )
+    payload = json.loads(response_path.read_text(encoding="utf-8"))
+    payload["origin"] = ResponseOrigin.LIVE_EXECUTION.value
+    response_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ResponseIngestionError, match="state FAILED"):
+        ingest_saved_response(package_directory, response_path, roots=ai_roots)
+    validated_path, _validated = ingest_saved_response(
+        package_directory,
+        response_path,
+        roots=ai_roots,
+        now=datetime(2026, 7, 15, 0, 2, tzinfo=UTC),
+        recover_late_response=True,
+    )
+
+    view = ledger.inspect(package.request.job_id)
+    assert tuple(event.status for event in view.events[-2:]) == (
+        LedgerStatus.RECOVERED,
+        LedgerStatus.INGESTED,
+    )
+    assert view.events[-2].response_sha256 == sha256_file(response_path)
+    assert view.events[-1].response_sha256 == sha256_file(validated_path)
 
 
 def test_job_ledger_is_append_only_and_enforces_transitions(ai_roots: StorageRoots) -> None:

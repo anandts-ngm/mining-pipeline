@@ -6,7 +6,6 @@ configuration loading, legacy runs, and dry runs remain unchanged and offline.
 
 from __future__ import annotations
 
-import os
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -99,6 +98,43 @@ def snapshot_verify(
         typer.secho(result.model_dump_json(indent=2), fg="red")
         raise typer.Exit(1)
     typer.secho("Snapshot verification passed.", fg="green")
+
+
+@phase03_ai_app.command("import-snapshot-source")
+def phase03_import_snapshot_source(
+    source: Path = typer.Option(..., "--source", exists=True, dir_okay=False),
+    source_id: str = typer.Option(..., "--source-id"),
+    role: str = typer.Option(..., "--role", help="legend or georeferenced-map."),
+    actor: str = typer.Option(..., "--actor", help="Person importing the exact source bytes."),
+    reason: str = typer.Option(..., "--reason", help="Auditable reason for the snapshot import."),
+    config: Path = typer.Option("config/project.yaml", "--config", "-c"),
+) -> None:
+    """Copy one exact local Phase 03 source into immutable snapshot storage."""
+
+    from buduunkhad.geospatial_ai.snapshots import (
+        import_phase03_snapshot_source,
+    )
+
+    try:
+        if role not in {"legend", "georeferenced-map"}:
+            raise ValueError("Phase 03 snapshot role must be legend or georeferenced-map")
+        _project, roots = _context(config)
+        destination, authority = import_phase03_snapshot_source(
+            source,
+            source_id=source_id,
+            role=role,
+            imported_by=actor,
+            import_reason=reason,
+            roots=roots,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        _abort(exc)
+    typer.secho("Imported immutable Phase 03 snapshot source.", fg="green")
+    typer.echo(f"Source ID: {authority.source_id}")
+    typer.echo(f"SHA-256: {authority.original_sha256}")
+    typer.echo(
+        f"Configured path: {destination.relative_to(roots.require_snapshot_root()).as_posix()}"
+    )
 
 
 @ai_app.command("prepare")
@@ -223,6 +259,14 @@ def execute(
 def ingest_response(
     package: Path = typer.Option(..., "--package", exists=True, file_okay=False),
     response: Path = typer.Option(..., "--response", exists=True, dir_okay=False),
+    recover_late_response: bool = typer.Option(
+        False,
+        "--recover-late-response",
+        help=(
+            "Reconcile a response that arrived after this exact job was marked failed by a "
+            "local command timeout."
+        ),
+    ),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
 ) -> None:
     """Validate an externally supplied response without claiming local provider execution."""
@@ -231,7 +275,12 @@ def ingest_response(
 
     try:
         _project, roots = _context(config)
-        output, record = ingest_saved_response(package, response, roots=roots)
+        output, record = ingest_saved_response(
+            package,
+            response,
+            roots=roots,
+            recover_late_response=recover_late_response,
+        )
     except (OSError, ValueError, RuntimeError) as exc:
         _abort(exc)
     typer.echo(f"Validated saved response: {output}")
@@ -453,12 +502,19 @@ def phase03_run_ai_first(
     approved_by: str | None = typer.Option(
         None,
         "--approved-by",
-        envvar="BUDUUNKHAD_AI_EGRESS_APPROVER",
         help="Named person authorizing the configured source package egress.",
     ),
     approval_note: str = typer.Option(
         "Run-scoped approval for the configured Phase 03 AI-first source packages.",
         "--approval-note",
+    ),
+    source_id: list[str] | None = typer.Option(
+        None,
+        "--source-id",
+        help=(
+            "Configured source ID to execute; repeatable. Required when the profile contains "
+            "multiple sources."
+        ),
     ),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
     ai_config: Path | None = typer.Option(
@@ -469,9 +525,12 @@ def phase03_run_ai_first(
         help="AI profile; defaults to sibling ai.openai.yaml when that file exists.",
     ),
 ) -> None:
-    """Execute configured Phase 03 AI tasks and build one integrated QGIS review."""
+    """Execute configured Phase 03 AI tasks and build source-specific QGIS reviews."""
 
-    from buduunkhad.geospatial_ai.ai_first import run_phase03_ai_first
+    from buduunkhad.geospatial_ai.ai_first import (
+        run_phase03_ai_first,
+        run_phase03_ai_first_batch,
+    )
 
     try:
         resolved_ai_config = ai_config
@@ -480,27 +539,58 @@ def phase03_run_ai_first(
             if candidate.is_file():
                 resolved_ai_config = candidate
         project, _roots = _context(config, resolved_ai_config)
-        resolved_approved_by = approved_by or os.environ.get("BUDUUNKHAD_AI_EGRESS_APPROVER")
-        if not (resolved_approved_by or "").strip():
+        if not (approved_by or "").strip():
+            raise ValueError("AI-first Phase 03 requires --approved-by for this exact run")
+        workflow = project.ai.phase03_workflow
+        if workflow is None:
+            raise ValueError("AI-first Phase 03 sources are not configured")
+        if source_id:
+            selected_ids = tuple(source_id)
+        elif len(workflow.configured_sources) == 1:
+            selected_ids = (workflow.configured_sources[0].source_id,)
+        else:
             raise ValueError(
-                "AI-first Phase 03 requires --approved-by or BUDUUNKHAD_AI_EGRESS_APPROVER"
+                "AI profile contains multiple Phase 03 sources; select each intended source "
+                "with --source-id"
             )
-        output, manifest = run_phase03_ai_first(
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValueError("--source-id values must be unique")
+        if len(selected_ids) == 1:
+            output, manifest = run_phase03_ai_first(
+                project,
+                pipeline_run_id=run_id,
+                ai_run_id=ai_run_id,
+                approved_by=cast(str, approved_by),
+                approval_note=approval_note,
+                source_id=selected_ids[0],
+            )
+            run_directory = project.runs_root / manifest.ai_run_id
+            typer.secho("AI-first Phase 03 completed.", fg="green")
+            typer.echo(f"Pipeline run: {manifest.pipeline_run_id}")
+            typer.echo(f"AI attempt: {manifest.ai_run_id}")
+            typer.echo(f"Manifest: {output}")
+            typer.echo(f"Review package: {run_directory / manifest.review_package_path}")
+            typer.echo(
+                f"Integrated QGIS project: {run_directory / manifest.integrated_project_path}"
+            )
+            return
+        output, batch = run_phase03_ai_first_batch(
             project,
             pipeline_run_id=run_id,
-            ai_run_id=ai_run_id,
-            approved_by=cast(str, resolved_approved_by),
+            batch_run_id=ai_run_id,
+            approved_by=cast(str, approved_by),
             approval_note=approval_note,
+            source_ids=selected_ids,
         )
     except (OSError, ValueError, RuntimeError) as exc:
         _abort(exc)
-    run_directory = project.runs_root / manifest.ai_run_id
-    typer.secho("AI-first Phase 03 completed.", fg="green")
-    typer.echo(f"Pipeline run: {manifest.pipeline_run_id}")
-    typer.echo(f"AI attempt: {manifest.ai_run_id}")
-    typer.echo(f"Manifest: {output}")
-    typer.echo(f"Review package: {run_directory / manifest.review_package_path}")
-    typer.echo(f"Integrated QGIS project: {run_directory / manifest.integrated_project_path}")
+    typer.secho("AI-first Phase 03 batch completed.", fg="green")
+    typer.echo(f"Pipeline run: {batch.pipeline_run_id}")
+    typer.echo(f"Batch manifest: {output}")
+    for session in batch.sessions:
+        typer.echo(f"{session.source_id}: AI attempt {session.ai_run_id}")
+        typer.echo(f"  Review package: {project.runs_root / session.review_package_path}")
+        typer.echo(f"  QGIS project: {project.runs_root / session.integrated_project_path}")
 
 
 @phase03_ai_app.command("review-overlaps")

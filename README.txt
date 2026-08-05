@@ -3,12 +3,18 @@ Buduunkhad exploration pipeline
 
 What this is
 ------------
-A config-driven Python geospatial pipeline implementing the automatable parts
-of the Buduunkhad exploration workflow methodology (phases 00-99), plus an
-offline, keyless AI-to-QGIS interpretation slice with human review and
-promotion controls. Project identity, licence, deliverable CRS, buffers, and
-the registered raw-input inventory are defined by config/project.yaml and the
-registered input manifests (config/input_register.csv, config/raw_manifest.csv).
+An AI-first, AI-native mineral-exploration engine that turns registered real-world
+inputs into reproducible GIS, raster, geological-evidence and prospect-ranking
+outputs. OpenAI performs the interpretation-heavy work; deterministic geospatial
+code performs transformations, measurements, validation, lineage and packaging.
+The engine also remains fully executable offline for deterministic processing,
+testing and recovery. Project identity, licence, deliverable CRS, buffers and the
+registered raw-input inventory are defined by config/project.yaml and the registered
+input manifests (config/input_register.csv, config/raw_manifest.csv).
+
+AI outputs are functional project artifacts, not demonstrations or placeholders.
+Their recorded lifecycle states distinguish machine conclusions from independent
+scientific approval; no label changes the underlying bytes, geometry or usefulness.
 
 Installation
 ------------
@@ -20,13 +26,21 @@ Python 3.11 or 3.12. From the repository root:
 Optional extras: [dem] (terrain/hydrology tooling), [openai] / [anthropic]
 (live provider adapters; never required for tests or offline work).
 
-Default behavior
-----------------
-The default execution profile is "legacy": fully offline, AI disabled, no
-network access, no provider SDK imports, and no external data egress. Dry runs
-(`run --dry-run`) require no raw data. Live provider execution is opt-in and
-requires explicit non-legacy configuration, egress approval, and credentials
-supplied only at execution time.
+Operating behavior
+------------------
+The Buduunkhad command-line workflow automatically loads config/ai.openai.yaml as
+its AI-first profile. A real run includes live interpretation when `run --ai` is
+selected; without that flag, the same engine runs its deterministic phases offline.
+The base project.yaml and library API remain keyless and offline so tests, recovery
+and non-Buduunkhad projects never send data implicitly. Dry runs (`run --dry-run`)
+require no raw data. Live provider execution requires
+`run --ai --ai-approved-by "NAME" --ai-source SOURCE_ID`, package-level egress
+approval and credentials supplied only at execution time.
+Profiles with several Phase 03 maps require each intended `--ai-source`; the CLI
+does not infer approval to send the whole source catalog.
+The repository-local `.env` may contain only `OPENAI_API_KEY` or
+`ANTHROPIC_API_KEY`; path roots, reviewer identities, and standing approvals are
+rejected there.
 
 Command-line entry points
 -------------------------
@@ -34,8 +48,9 @@ Command-line entry points
     buduunkhad ai snapshot-create | snapshot-verify | prepare | approve-egress
                   | execute | ingest-response | process-response | evaluate
                   | inspect-job
-    buduunkhad ai phase03 prepare-source | import-ai-draft | review-overlaps
-                         | build-run-review | promote-reviewed
+    buduunkhad ai phase03 import-snapshot-source | prepare-source | run-ai-first
+                         | import-ai-draft | review-overlaps | build-run-review
+                         | promote-reviewed
 
 Where things live
 -----------------
@@ -70,15 +85,25 @@ Where things live
 
 Implemented phase boundary
 --------------------------
-Phases 00-04 have substantial deterministic implementations. Phase 03 remains
-scientifically incomplete. Phase 04 remains a legacy comparator inside the ordered
-pipeline, while a separate prospect-polygon implementation remains inactive until the exact Phase 03 handoff,
-reference-set calibration and required human reviews exist. The comparator may run
-provisionally from an exact sealed Phase 03 support-evidence source when deterministic QA/QC
-passes; the Phase 03 scientific gate remains blocked and authoritative Phase 04 remains inactive.
-Dry-run scaffolding does not establish readiness. Phases 05-11 and 99 are
-registered stubs (scaffolding and templates only). The optional Phase 03 AI handoff
-promotes explicitly human-reviewed proposals into standalone accepted evidence;
-accepted evidence is support material and is not scientific (geologist) approval.
-The build-run-review command creates one portable QGIS view over sealed Phase 01–03
-outputs and validated AI review packages while preserving those provenance boundaries.
+Phases 00-04 have substantial deterministic implementations. They produce real,
+sealed outputs from real inputs. Phase 03 combines
+deterministic evidence assembly with AI legend extraction, geological-feature
+proposals, critique and QGIS review packages. Phase 04 currently produces a fixed
+250 m evidence-grid comparator: a reproducible machine baseline that converts the
+available evidence into candidate polygons and A/B/C/D scores. It is called a
+"legacy comparator" because the adopted Phase 04 method instead ranks reviewed,
+geologist-drawn prospect polygons using ranged criterion judgments.
+
+Phase 03 remains
+scientifically incomplete until its real georeferencing, evidence, 03A and review
+records exist. This does not invalidate its functional AI and GIS outputs.
+Phase 04 remains a legacy comparator inside the ordered pipeline; its candidate polygons are
+real comparison results, not the separate master-aligned prospect-polygon decision.
+
+The separate master-aligned prospect-polygon implementation already measures and
+ranks those reviewed polygons. Its activation records preserve whether a result is
+an AI operational conclusion or an independently accepted geological conclusion;
+the engine never discards a usable output merely because scientific review remains
+outstanding. Phases 05-11 and 99 remain registered stubs. The build-run-review
+command creates one portable QGIS view over sealed Phase 01–03 outputs and validated
+AI review packages while preserving exact source and model lineage.

@@ -1,12 +1,11 @@
 """Phase 03 / 03A — Geological, Metallogenic & CMCS Synthesis + Preliminary Deposit Model.
 
-ORCHESTRATE. The heavy lifting — georeferencing scan maps, digitizing lithology /
-structure / occurrence vectors, writing the deposit model, doing the scoring — is human
-work in QGIS / Excel / Word. This module scaffolds the 12-folder tree, emits every
-register / template / schema, ingests the machine-tractable inputs (the #68 mineralized-
-point XLSX and exact manifest-authorized reviewed layers), builds the CMCS 5/10/20/25 km context buffer off
-the Phase 01 licence boundary, assembles the preliminary 17-layer support-evidence schema, and
-runs the QA/QC + 6-condition gate.
+ORCHESTRATE. This module binds the exact Phase 00 source set, scaffolds the 12-folder tree,
+emits the registers and schemas, ingests machine-tractable inputs and exact
+manifest-authorized evidence, builds the CMCS 5/10/20/25 km context, assembles the preliminary
+17-layer support-evidence package, and runs content-aware QA/QC. Separate typed workflows handle
+georeference acceptance, AI-assisted source interpretation, the 03A assessment and scientific
+handoff; those workflows do not invent the qualified human decisions required by the methodology.
 
 Follows the adopted requirements in ``config/methodology/phase03.yaml`` and the approved external
 methodology. Every Phase 03 output is **historical / contextual / preliminary support only — not
@@ -20,13 +19,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from buduunkhad.ai.fingerprint import sha256_value
 from buduunkhad.core import naming, pdf_map, registers, vector_io
 from buduunkhad.core.evidence_manifest import (
     EvidenceExecutionMode,
     EvidenceOrigin,
+    EvidenceRole,
+    ResolvedEvidence,
     phase03_target_accepts,
 )
 from buduunkhad.core.gates import GateDecision, evaluate_gate
+from buduunkhad.core.phase03_science import DEPOSIT_MODEL_SCORING_CRITERIA
+from buduunkhad.core.phase03_sources import (
+    Phase03SourceTraceability,
+    create_phase03_source_traceability,
+    write_phase03_source_traceability,
+)
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
@@ -108,14 +116,7 @@ DEPOSIT_MODELS: list[tuple[str, str]] = [
 
 # 100-point scoring rubric (Step 10; identical in both docs).
 SCORING_CRITERIA: list[tuple[str, int]] = [
-    ("Favorable geology / host lithology", 20),
-    ("Intrusive / contact / structure control", 15),
-    ("Known mineral occurrence", 15),
-    ("Historical geochemistry / shlich / stream sediment", 15),
-    ("Metallogenic context", 10),
-    ("ASTER/Sentinel alteration support", 10),
-    ("Field mapping / pXRF support", 10),
-    ("Access / workability", 5),
+    (criterion, maximum) for _criterion_id, criterion, maximum in DEPOSIT_MODEL_SCORING_CRITERIA
 ]
 
 # ---- register column schemas ----------------------------------------------- #
@@ -235,6 +236,59 @@ _DATA_GAP_COLUMNS = [
     "owner",
     "status",
 ]
+_SOURCE_TRACE_COLUMNS = [
+    "input_no",
+    "evidence_group",
+    "filename",
+    "file_type",
+    "methodology_action",
+    "source_phase_id",
+    "source_run_id",
+    "source_relative_path",
+    "source_sha256",
+    "source_size_bytes",
+]
+_SUPPORT_AVAILABILITY_COLUMNS = [
+    "evidence_id",
+    "evidence_role",
+    "origin",
+    "lifecycle_state",
+    "source_run_id",
+    "artifact_path",
+    "artifact_sha256",
+    "layer_name",
+    "target_layer_name",
+    "phase03_use",
+    "limitations",
+]
+
+_STANDALONE_PHASE03_ROLES = frozenset(
+    {
+        EvidenceRole.ALTERATION_SUPPORT,
+        EvidenceRole.GEOCHEMICAL_ANOMALY,
+    }
+)
+_CONTENT_DOMAINS: dict[str, frozenset[str]] = {
+    "tectonic": frozenset({"tectonic_terrane_context_polygon"}),
+    "metallogenic": frozenset({"metallogenic_zones_polygon", "ore_district_node_context_polygon"}),
+    "geology": frozenset({"geology_units_200k_polygon", "geology_units_50k_polygon"}),
+    "structure": frozenset({"faults_structures_line", "intrusive_contacts_line", "dyke_vein_line"}),
+    "occurrence": frozenset(
+        {
+            "mineral_occurrences_point",
+            "mineralized_points_point",
+            "cmcs_nearest_occurrences_point",
+        }
+    ),
+    "prospectivity/source-material": frozenset(
+        {
+            "prospectivity_target_zones_polygon",
+            "source_material_observation_point",
+            "source_material_route_line",
+            "source_material_trench_pit_point",
+        }
+    ),
+}
 
 
 class Phase03GeologySynthesis(Phase):
@@ -289,6 +343,10 @@ class Phase03GeologySynthesis(Phase):
     _xref_rows: list[dict[str, object]]
     _coverage_rows: list[dict[str, object]]
     _point_ingest: vector_io.PointIngestResult | None
+    _source_traceability: Phase03SourceTraceability | None
+    _standalone_evidence: list[ResolvedEvidence]
+    _selected_role_counts: dict[EvidenceRole, int]
+    _layer_feature_counts: dict[str, int]
 
     def __init__(self) -> None:
         self._evidence_layers = []
@@ -303,6 +361,10 @@ class Phase03GeologySynthesis(Phase):
         self._xref_rows = []
         self._coverage_rows = []
         self._point_ingest = None
+        self._source_traceability = None
+        self._standalone_evidence = []
+        self._selected_role_counts = {}
+        self._layer_feature_counts = {}
 
     # ------------------------------------------------------------------ #
 
@@ -316,9 +378,11 @@ class Phase03GeologySynthesis(Phase):
         evidence_path = self._emit_evidence_schema(ctx, pdir, result)
 
         if not ctx.dry_run:
+            self._emit_source_traceability(ctx, pdir, result)
             self._build_cmcs_buffer(ctx, pdir, evidence_path, result)
             self._ingest_mineralized_points(ctx, pdir, evidence_path, result)
             self._ingest_human_layers(ctx, evidence_path)
+            self._refresh_layer_feature_counts(evidence_path)
 
         # ---- templates / registers (dry-run AND real run; occurrence registers now populated) ----
         self._emit_templates(ctx, pdir, result)
@@ -370,6 +434,42 @@ class Phase03GeologySynthesis(Phase):
         if not path.exists():
             return None
         return vector_io.read_layer(path, "license_boundary")
+
+    # ------------------------------------------------------------------ #
+    # Step 1 — exact source traceability over sealed Phase 00 copies
+    # ------------------------------------------------------------------ #
+
+    def _emit_source_traceability(
+        self,
+        ctx: RunContext,
+        pdir: Path,
+        result: PhaseResult,
+    ) -> None:
+        trace = create_phase03_source_traceability(
+            phase03_run_id=ctx.run_id,
+            phase00_source_run_id=ctx.source_run_id_for("00"),
+            phase00_root=ctx.phase_dir("00"),
+            records=self.records(ctx),
+        )
+        folder = pdir / "12_Phase3_QAQC_and_Handover"
+        json_path = folder / f"{ctx.config.register_prefix}_Phase3_Source_Traceability.json"
+        write_phase03_source_traceability(trace, json_path)
+        result.add_output(json_path)
+        rows = [item.model_dump(mode="json") for item in trace.records]
+        xlsx_path = folder / naming.register_name(
+            ctx.config.register_prefix,
+            "Phase3_Source_Traceability_Register",
+            ext="xlsx",
+            version=1,
+        )
+        registers.write_table_xlsx(
+            rows,
+            _SOURCE_TRACE_COLUMNS,
+            xlsx_path,
+            sheet_title="Source Traceability",
+        )
+        result.add_output(xlsx_path)
+        self._source_traceability = trace
 
     # ------------------------------------------------------------------ #
     # Step 7 — CMCS/MRPAM 5/10/20/25 km buffer
@@ -671,17 +771,30 @@ class Phase03GeologySynthesis(Phase):
 
         layer_names = {name for name, _geom, _pref in EVIDENCE_LAYERS}
         reserved = {_CMCS_BUFFER_LAYER, _MINERALIZED_LAYER, "license_boundary"}
-        claimed_targets: set[str] = set()
+        next_feature_number: dict[str, int] = {}
         selected = ctx.evidence_for("03", mode=EvidenceExecutionMode.SUPPORT_EVIDENCE)
         for resolved in selected:
             record = resolved.record
+            self._selected_role_counts[record.evidence_role] = (
+                self._selected_role_counts.get(record.evidence_role, 0) + 1
+            )
+            resolved.verify_current_artifact()
             if record.origin is EvidenceOrigin.PHASE03_AI_HANDOFF:
+                self._standalone_evidence.append(resolved)
                 self._notes.append(
                     "Accepted AI handoff evidence remains standalone and provenance-preserving: "
                     f"{record.evidence_id}:{record.layer_name}"
                 )
                 continue
             target = record.target_layer_name
+            if target is None and record.evidence_role in _STANDALONE_PHASE03_ROLES:
+                self._standalone_evidence.append(resolved)
+                self._notes.append(
+                    "Selected support evidence remains standalone because the adopted 17-layer "
+                    f"schema has no canonical target for {record.evidence_role.value}: "
+                    f"{record.evidence_id}:{record.layer_name}"
+                )
+                continue
             if (
                 target is None
                 or target not in layer_names
@@ -691,23 +804,44 @@ class Phase03GeologySynthesis(Phase):
                 raise ValueError(
                     f"evidence {record.evidence_id} has no permitted Phase 03 target layer"
                 )
-            if target in claimed_targets:
-                raise ValueError(f"multiple evidence records claim Phase 03 target layer {target}")
-            claimed_targets.add(target)
-            resolved.verify_current_artifact()
             gdf = vector_io.read_layer(resolved.artifact, record.layer_name)
             resolved.verify_current_artifact()
+            feature_id_start = next_feature_number.get(target, 1)
             gdf = self._prepare_evidence_gdf(
                 gdf,
                 target,
                 target_epsg=ctx.config.target_epsg,
                 evidence_type=record.evidence_role.value,
                 filename=resolved.artifact.name,
-                source_group=f"manifest:{resolved.manifest_id[:48]}",
+                source_group=(
+                    f"manifest:{resolved.manifest_id[:24]}:{sha256_value(record.evidence_id)[:24]}"
+                ),
                 limitation="; ".join(record.limitations) or HISTORICAL_LIMITATION,
+                feature_id_start=feature_id_start,
+                replace_feature_ids=True,
             )
+            next_feature_number[target] = feature_id_start + len(gdf)
             vector_io.write_layer(gdf, evidence_path, layer=target, mode="a")
-            self._ingested_layers.append(target)
+            if target not in self._ingested_layers:
+                self._ingested_layers.append(target)
+
+    def _refresh_layer_feature_counts(self, evidence_path: Path) -> None:
+        """Measure content separately from schema presence."""
+
+        counts: dict[str, int] = {}
+        for layer, _geometry, _prefix in EVIDENCE_LAYERS:
+            counts[layer] = len(vector_io.read_layer(evidence_path, layer))
+        self._layer_feature_counts = counts
+
+    def _content_domain_status(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        populated: list[str] = []
+        empty: list[str] = []
+        for domain, layers in _CONTENT_DOMAINS.items():
+            if any(self._layer_feature_counts.get(layer, 0) > 0 for layer in layers):
+                populated.append(domain)
+            else:
+                empty.append(domain)
+        return tuple(populated), tuple(empty)
 
     def _prepare_evidence_gdf(
         self,
@@ -721,6 +855,8 @@ class Phase03GeologySynthesis(Phase):
         filename: str = "",
         source_group: str = "",
         limitation: str = HISTORICAL_LIMITATION,
+        feature_id_start: int = 1,
+        replace_feature_ids: bool = False,
     ):
         """Enforce ``target_epsg``, promote to the layer's Multi* geometry, stamp mandatory
         provenance fields, mint ``feature_id`` where missing/blank, and reindex to *exactly* the
@@ -778,8 +914,10 @@ class Phase03GeologySynthesis(Phase):
             or gdf["feature_id"].isna().all()
             or (gdf["feature_id"].astype(str).str.strip() == "").all()
         )
-        if prefix and blank_ids:
-            gdf["feature_id"] = [self.feature_id(prefix, i + 1) for i in range(len(gdf))]
+        if prefix and (blank_ids or replace_feature_ids):
+            gdf["feature_id"] = [
+                self.feature_id(prefix, feature_id_start + i) for i in range(len(gdf))
+            ]
         setdefault("feature_id", "")
         setdefault("source_raw_input_no", input_no)
         setdefault("source_raw_filename", filename)
@@ -925,6 +1063,14 @@ class Phase03GeologySynthesis(Phase):
                 _DATA_GAP_COLUMNS,
                 self._data_gap_rows(),
                 "Data Gap",
+            ),
+            (
+                pdir
+                / "11_Evidence_Scoring_and_DataGap"
+                / reg("Phase3_Selected_Support_Evidence_Availability"),
+                _SUPPORT_AVAILABILITY_COLUMNS,
+                self._support_availability_rows(ctx),
+                "Support Evidence",
             ),
         ]
         for path, columns, rows, title in tables:
@@ -1123,24 +1269,84 @@ class Phase03GeologySynthesis(Phase):
         rows.append(total)
         return rows
 
+    def _support_availability_rows(self, ctx: RunContext) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for resolved in ctx.evidence_for("03", mode=EvidenceExecutionMode.SUPPORT_EVIDENCE):
+            record = resolved.record
+            rows.append(
+                {
+                    "evidence_id": record.evidence_id,
+                    "evidence_role": record.evidence_role.value,
+                    "origin": record.origin.value,
+                    "lifecycle_state": record.lifecycle_state.value,
+                    "source_run_id": record.source_run_id,
+                    "artifact_path": record.artifact_path,
+                    "artifact_sha256": record.artifact_sha256,
+                    "layer_name": record.layer_name,
+                    "target_layer_name": record.target_layer_name or "",
+                    "phase03_use": (
+                        "standalone-reviewed-support"
+                        if record.origin is EvidenceOrigin.PHASE03_AI_HANDOFF
+                        or record.target_layer_name is None
+                        else "consolidated-legacy-schema-layer"
+                    ),
+                    "limitations": "; ".join(record.limitations),
+                }
+            )
+        return rows
+
     def _data_gap_rows(self) -> list[dict[str, object]]:
-        # The known ASTER/KOMPSAT support gap (02 -> 03 handoff): non-blocking, worth only
-        # 10/100 pts and not a required Phase-3 handover layer. Recorded, not fatal.
-        return [
-            {
-                "gap_id": "P3-GAP-001",
-                "gap_type": "ASTER/KOMPSAT alteration support layer absent",
-                "related_input_or_layer": "#73 ASTER HDF; #24/28/32/36/40 KOMPSAT bands",
-                "severity": "Low",
-                "recommended_action": (
-                    "Produce ASTER/KOMPSAT support layers externally (SNAP/ILWIS) if desired; "
-                    "worth only 10/100 pts and not a required Phase-3 handover layer."
-                ),
-                "validation_priority": "Low",
-                "owner": "",
-                "status": "Open",
-            }
-        ]
+        rows: list[dict[str, object]] = []
+        if self._selected_role_counts.get(EvidenceRole.ALTERATION_SUPPORT, 0) == 0:
+            rows.append(
+                {
+                    "gap_id": "P3-GAP-001",
+                    "gap_type": "No selected alteration-support evidence manifest",
+                    "related_input_or_layer": "Phase 02 ASTER/Sentinel/KOMPSAT derivatives",
+                    "severity": "Medium",
+                    "recommended_action": (
+                        "Register an exact sealed Phase 02 alteration-support layer and select "
+                        "its evidence manifest for the Phase 03 run."
+                    ),
+                    "validation_priority": "Medium",
+                    "owner": "",
+                    "status": "Open",
+                }
+            )
+        if self._selected_role_counts.get(EvidenceRole.GEOCHEMICAL_ANOMALY, 0) == 0:
+            rows.append(
+                {
+                    "gap_id": "P3-GAP-002",
+                    "gap_type": "No selected historical geochemical-anomaly evidence manifest",
+                    "related_input_or_layer": "Historical geochemistry/shlich/stream sediment",
+                    "severity": "Medium",
+                    "recommended_action": (
+                        "Register the exact reviewed geochemical layer as standalone Phase 03 "
+                        "support evidence."
+                    ),
+                    "validation_priority": "Medium",
+                    "owner": "",
+                    "status": "Open",
+                }
+            )
+        _populated, empty = self._content_domain_status()
+        if empty:
+            rows.append(
+                {
+                    "gap_id": "P3-GAP-003",
+                    "gap_type": "One or more required geological evidence domains are empty",
+                    "related_input_or_layer": ", ".join(empty),
+                    "severity": "High",
+                    "recommended_action": (
+                        "Complete source-specific extraction/review and select exact evidence "
+                        "manifests for the empty domains."
+                    ),
+                    "validation_priority": "High",
+                    "owner": "",
+                    "status": "Open",
+                }
+            )
+        return rows
 
     def _write_technical_log(self, ctx: RunContext, pdir: Path, result: PhaseResult) -> None:
         cfg = ctx.config
@@ -1170,12 +1376,31 @@ class Phase03GeologySynthesis(Phase):
             return report
 
         layers_ok = len(self._evidence_layers) == len(EVIDENCE_LAYERS)
+        populated_domains, empty_domains = self._content_domain_status()
+        source_trace_ok = self._source_traceability is not None and len(
+            self._source_traceability.records
+        ) == len(self.input_numbers)
         report.add(
-            "Geology/structure/occurrence/prospectivity/metallogenic context in Master GIS "
+            "Exact Phase 03 source traceability recorded",
+            RECORDED_ACCEPTANCE,
+            decision=Decision.PASS if source_trace_ok else Decision.FAIL,
+            note=(
+                f"Bound {len(self._source_traceability.records)} registered inputs to exact "
+                f"Phase 00 source run {self._source_traceability.phase00_source_run_id}."
+                if self._source_traceability is not None
+                else "The exact Phase 00 source set was not recorded."
+            ),
+        )
+        report.add(
+            "Geology/structure/occurrence/prospectivity/metallogenic content in Master GIS "
             "(from #1-8, #53-72)",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if layers_ok else Decision.FAIL,
-            note=f"{len(self._evidence_layers)}/{len(EVIDENCE_LAYERS)} evidence layers present.",
+            decision=Decision.PASS if not empty_domains else Decision.PENDING,
+            note=(
+                f"Populated domains: {', '.join(populated_domains) or 'none'}; "
+                f"empty domains: {', '.join(empty_domains) or 'none'}. Schema presence is "
+                "reported separately and does not satisfy evidence completeness."
+            ),
         )
         coordinate_provenance = (
             self._point_ingest.crs_description
@@ -1261,10 +1486,16 @@ class Phase03GeologySynthesis(Phase):
         report.add(
             "Human-digitized geology/structure/occurrence layers ingested",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if self._ingested_layers else Decision.PENDING,
+            decision=(
+                Decision.PASS
+                if {EvidenceRole.GEOLOGY, EvidenceRole.STRUCTURE} <= set(self._selected_role_counts)
+                and "occurrence" in populated_domains
+                else Decision.PENDING
+            ),
             note=(
-                f"Ingested: {', '.join(sorted(set(self._ingested_layers)))}."
-                if self._ingested_layers
+                f"Consolidated layers: {', '.join(sorted(set(self._ingested_layers))) or 'none'}; "
+                f"selected roles: {', '.join(sorted(role.value for role in self._selected_role_counts)) or 'none'}."
+                if self._ingested_layers or self._selected_role_counts
                 else (
                     "No eligible reviewed layer was selected; complete QGIS review, register the "
                     "exact artifact in the evidence catalog, and rerun with its manifest selected."
@@ -1272,10 +1503,20 @@ class Phase03GeologySynthesis(Phase):
             ),
         )
         report.add(
-            "Remote-sensing (ASTER/KOMPSAT) support gap recorded (non-blocking)",
+            "Remote-sensing alteration support availability recorded",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS,
-            note="Recorded in data-gap register; worth 10/100 pts, not a required Phase-3 layer.",
+            decision=(
+                Decision.PASS
+                if self._selected_role_counts.get(EvidenceRole.ALTERATION_SUPPORT, 0)
+                else Decision.PENDING
+            ),
+            note=(
+                f"{self._selected_role_counts.get(EvidenceRole.ALTERATION_SUPPORT, 0)} exact "
+                "alteration-support evidence record(s) selected."
+                if self._selected_role_counts.get(EvidenceRole.ALTERATION_SUPPORT, 0)
+                else "No alteration-support evidence manifest was selected; the data-gap register "
+                "does not claim that Phase 02 products are physically absent."
+            ),
         )
         report.add(
             "Legend dictionaries + evidence/occurrence registers emitted",

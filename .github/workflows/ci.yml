@@ -69,6 +69,36 @@ jobs:
       - name: Git diff check
         run: git diff --check
 
+  windows-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package and development checks
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff lint and format
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Ty (type check)
+        run: |
+          $python = (Get-Command python).Source
+          ty check --python $python
+
+      - name: Exercise Windows path, run-storage, and publication contracts
+        run: |
+          pytest -q tests/test_config.py tests/test_phase00.py tests/test_phase01.py tests/test_pipeline.py tests/test_publish.py tests/test_results_view.py tests/test_results_upload.py
+
   minimum-dependencies:
     runs-on: ubuntu-latest
     strategy:

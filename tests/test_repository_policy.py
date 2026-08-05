@@ -94,7 +94,7 @@ def test_fixture_exceptions_are_exact_not_directory_wide() -> None:
 
 
 def test_reviewed_methodology_documents_are_exact_path_and_hash_exceptions() -> None:
-    assert len(APPROVED_METHODOLOGY_DOCUMENTS) == 17
+    assert len(APPROVED_METHODOLOGY_DOCUMENTS) == 13
     assert artifact_violations(REPOSITORY_ROOT, APPROVED_METHODOLOGY_DOCUMENTS) == ()
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from buduunkhad.core import raw_guard
 from buduunkhad.core.gates import GateDecision, GateStatus, evaluate_gate
 from buduunkhad.core.paths import PHASE_DIRS, phase_dir
 from buduunkhad.core.qaqc import Decision, new_report
@@ -38,6 +39,24 @@ def test_predecessor_rejects_forged_execution_policy_binding(raw_archive):
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
     with pytest.raises(RuntimeError, match="execution-policy binding is unauthorized"):
+        run_pipeline(
+            config,
+            register,
+            only=["01"],
+            dry_run=False,
+            input_phase_runs={"00": source.run_id},
+        )
+
+
+def test_predecessor_rejects_forged_execution_environment(raw_archive):
+    config, register, _raw = raw_archive
+    source = run_pipeline(config, register, only=["00"], dry_run=False)
+    path = config.runs_root / source.run_id / "run_manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["execution_environment"]["package:rasterio"] = "forged"
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="execution-environment identity is inconsistent"):
         run_pipeline(
             config,
             register,
@@ -235,7 +254,11 @@ def test_dry_run_builds_full_tree_and_manifest(project):
     assert man_path.exists()
     data = json.loads(man_path.read_text())
     assert data["dry_run"] is True
-    assert data["manifest_format_version"] == "2.2.0"
+    assert data["manifest_format_version"] == "2.3.0"
+    assert data["execution_environment"]["python_version"]
+    assert data["execution_environment"]["operating_system"]
+    assert data["execution_environment"]["gdal"]
+    assert not {"hostname", "username", "path"} & set(data["execution_environment"])
     assert [item["execution_mode"] for item in data["execution_policy"]["phase_modes"]] == [
         "scaffold"
     ] * 13
@@ -274,6 +297,8 @@ def test_resume_keeps_run_manifest_v2_0_compatibility(raw_archive):
     path = config.runs_root / original.run_id / "run_manifest.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["manifest_format_version"] = "2.0.0"
+    data["execution_identity"].pop("environment_sha256")
+    data.pop("execution_environment")
     data.pop("evidence_manifests", None)
     data.pop("source_phases", None)
     data.pop("execution_policy")
@@ -527,6 +552,7 @@ def test_successful_run_manifest_seals_every_publishable_output_and_runner_qaqc(
         "project_configuration_sha256",
         "methodology_contract_sha256",
         "code_version",
+        "environment_sha256",
         "parameters_sha256",
         "execution_policy_sha256",
     }
@@ -549,6 +575,19 @@ def test_real_run_without_data_fails_loudly(project):
     assert len(missing) == len(register)
     with pytest.raises(MissingRawDataError):
         run_pipeline(config, register, only=["00"], dry_run=False)
+
+
+def test_real_run_rejects_duplicate_raw_basenames_before_creating_a_run(raw_archive):
+    config, register, raw_root = raw_archive
+    source = next(path for path in raw_root.rglob(register[0].filename))
+    duplicate = raw_root / "duplicate-group" / source.name
+    duplicate.parent.mkdir()
+    duplicate.write_bytes(source.read_bytes())
+
+    with pytest.raises(raw_guard.RawIntegrityError, match="duplicate basenames"):
+        run_pipeline(config, register, only=["00"], dry_run=False)
+
+    assert not config.runs_root.exists()
 
 
 def test_acknowledged_gap_does_not_block(raw_archive):
@@ -680,11 +719,10 @@ def test_project_execution_lock_rejects_a_second_writer(project):
     from buduunkhad.core.run_storage import ExecutionLockError, ProjectExecutionLock
 
     config, register, _tmp = project
-    with (
-        ProjectExecutionLock(config.runs_root, "first-run"),
-        pytest.raises(ExecutionLockError, match="execution lock"),
-    ):
-        run_pipeline(config, register, only=["00"], dry_run=True, run_id="second-run")
+    with ProjectExecutionLock(config.runs_root, "first-run"):
+        with pytest.raises(ExecutionLockError, match="verify its recorded PID") as caught:
+            run_pipeline(config, register, only=["00"], dry_run=True, run_id="second-run")
+        assert str(config.runs_root / ".pipeline.lock") in str(caught.value)
     assert not (config.runs_root / "second-run").exists()
 
 
@@ -841,6 +879,26 @@ def test_resume_rejects_methodology_contract_drift(project):
     methodology = config.base_dir / "config" / "methodology"
     methodology.mkdir()
     (methodology / "contract.yaml").write_text("version: 1\n", encoding="utf-8")
+
+    with pytest.raises(ResumeError, match="resume identity differs"):
+        run_pipeline(
+            config,
+            register,
+            only=["00"],
+            dry_run=True,
+            run_id=original.run_id,
+            resume=True,
+        )
+
+
+def test_resume_rejects_execution_environment_drift(project, monkeypatch):
+    from buduunkhad.pipeline import ResumeError
+
+    config, register, _tmp = project
+    original = run_pipeline(config, register, only=["00"], dry_run=True)
+    changed_environment = dict(original.execution_environment)
+    changed_environment["package:rasterio"] = "changed-after-run"
+    monkeypatch.setattr("buduunkhad.pipeline.execution_environment", lambda: changed_environment)
 
     with pytest.raises(ResumeError, match="resume identity differs"):
         run_pipeline(

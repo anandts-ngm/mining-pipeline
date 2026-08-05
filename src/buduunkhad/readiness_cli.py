@@ -245,6 +245,13 @@ def deposit_model_assessment(
     candidate_model: str = typer.Option(..., "--candidate-model"),
     evidence_manifest: list[str] = typer.Option(..., "--evidence-manifest"),
     evidence_groups: Path = typer.Option(..., "--evidence-groups", exists=True, dir_okay=False),
+    criterion_scores: Path = typer.Option(
+        ...,
+        "--criterion-scores",
+        exists=True,
+        dir_okay=False,
+        help="JSON array containing the exact eight-row 100-point rubric.",
+    ),
     missing_evidence: list[str] | None = typer.Option(None, "--missing-evidence"),
     confidence_basis: str = typer.Option(..., "--confidence-basis"),
     limitation: list[str] = typer.Option(..., "--limitation"),
@@ -253,6 +260,12 @@ def deposit_model_assessment(
     proposing_job_id: str | None = typer.Option(None, "--proposing-job-id"),
     proposing_response_id: str | None = typer.Option(None, "--proposing-response-id"),
     output: Path = typer.Option(..., "--output", dir_okay=False),
+    workbook_output: Path | None = typer.Option(
+        None,
+        "--workbook-output",
+        dir_okay=False,
+        help="Optional rendered 03A review workbook bound to the assessment ID.",
+    ),
     config: Path = typer.Option("config/project.yaml", "--config", "-c"),
 ) -> None:
     """Create a structured 03A proposal from exact accepted evidence manifests."""
@@ -260,8 +273,10 @@ def deposit_model_assessment(
     from buduunkhad.config import load_config
     from buduunkhad.core.evidence_manifest import EvidenceAuthorityResolver
     from buduunkhad.core.phase03_science import (
+        DepositModelCriterionScore,
         DepositModelEvidenceGroup,
         create_deposit_model_assessment,
+        write_deposit_model_assessment_workbook,
         write_phase03_science_record,
     )
 
@@ -274,6 +289,13 @@ def deposit_model_assessment(
         if not isinstance(data, list):
             raise ValueError("evidence groups must be a JSON array")
         groups = tuple(DepositModelEvidenceGroup.model_validate(item) for item in data)
+        score_data = json.loads(
+            criterion_scores.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_object,
+        )
+        if not isinstance(score_data, list):
+            raise ValueError("criterion scores must be a JSON array")
+        scores = tuple(DepositModelCriterionScore.model_validate(item) for item in score_data)
         assessment = create_deposit_model_assessment(
             phase03_run_id=phase03_run,
             resolver=EvidenceAuthorityResolver(
@@ -288,15 +310,20 @@ def deposit_model_assessment(
             confidence_basis=confidence_basis,
             limitations=tuple(limitation),
             recommended_validation=tuple(recommended_validation),
+            criterion_scores=scores,
             draft_score=draft_score,
             proposing_job_id=proposing_job_id,
             proposing_response_id=proposing_response_id,
         )
         write_phase03_science_record(assessment, output)
+        if workbook_output is not None:
+            write_deposit_model_assessment_workbook(assessment, workbook_output)
     except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
         _abort(exc)
     typer.echo(f"Deposit-model assessment: {output}")
     typer.echo(f"Assessment ID: {assessment.assessment_id}")
+    if workbook_output is not None:
+        typer.echo(f"Assessment workbook: {workbook_output}")
     typer.echo("This is a structured proposal, not geologist acceptance.")
 
 

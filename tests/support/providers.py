@@ -37,11 +37,15 @@ class OpenAIResponsesDouble:
         response_id: str = "openai-response-1",
         input_tokens: int = 7,
         output_tokens: int = 3,
+        cached_input_tokens: int = 0,
+        reasoning_output_tokens: int = 0,
     ) -> None:
         self.arguments: dict[str, object] | None = None
         self.response_id = response_id
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        self.cached_input_tokens = cached_input_tokens
+        self.reasoning_output_tokens = reasoning_output_tokens
 
     def create(self, **kwargs: object) -> object:
         self.arguments = kwargs
@@ -51,6 +55,12 @@ class OpenAIResponsesDouble:
             usage=SimpleNamespace(
                 input_tokens=self.input_tokens,
                 output_tokens=self.output_tokens,
+                input_tokens_details=SimpleNamespace(
+                    cached_tokens=self.cached_input_tokens,
+                ),
+                output_tokens_details=SimpleNamespace(
+                    reasoning_tokens=self.reasoning_output_tokens,
+                ),
             ),
         )
 

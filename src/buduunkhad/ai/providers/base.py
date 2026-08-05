@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import fields as dataclass_fields
 from dataclasses import is_dataclass
@@ -44,6 +45,43 @@ class ProviderCredentialError(AIProviderError):
 
 class ProviderResponseError(AIProviderError):
     """A live provider returned an unusable response envelope."""
+
+
+class ProviderExecutionError(AIProviderError):
+    """A provider SDK call failed with a safe, attributable diagnostic."""
+
+    def __init__(self, provider: str, error_type: str, redacted_message: str) -> None:
+        self.provider = provider
+        self.provider_error_type = error_type
+        self.error_category = f"{provider}:{error_type}"
+        super().__init__(f"{provider} {error_type}: {redacted_message}")
+
+
+_SENSITIVE_PROVIDER_TEXT = (
+    re.compile(r"sk-[A-Za-z0-9_-]+"),
+    re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+"),
+    re.compile(r"data:image/[^;\s]+;base64,[A-Za-z0-9+/=]+"),
+)
+
+
+def provider_execution_error(
+    provider: str,
+    error: Exception,
+    *,
+    sensitive_values: Iterable[str | None] = (),
+) -> ProviderExecutionError:
+    """Convert an SDK exception to a bounded message without credentials or image payloads."""
+
+    error_type = type(error).__name__
+    message = " ".join(str(error).split()) or "provider request failed without a message"
+    for value in sensitive_values:
+        if value:
+            message = message.replace(value, "[redacted]")
+    for pattern in _SENSITIVE_PROVIDER_TEXT:
+        message = pattern.sub("[redacted]", message)
+    if len(message) > 300:
+        message = f"{message[:297]}..."
+    return ProviderExecutionError(provider, error_type, message)
 
 
 class ProviderImage(FrozenModel):

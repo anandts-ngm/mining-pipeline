@@ -2,15 +2,17 @@ ai:
   profile: ai-first
   enabled: true
   provider: openai
-  provider_model: gpt-5.6-sol
-  reasoning_effort: xhigh
+  provider_model: gpt-5.6-terra
+  reasoning_effort: max
   reasoning_mode: pro
   text_verbosity: medium
   store_responses: false
   external_data_allowed: true
   request_timeout_seconds: 3600
-  max_output_tokens: 128000
+  max_output_tokens: 32768
   max_requests_per_run: 4
+  max_input_images_per_request: 24
+  max_input_bytes_per_request: 100000000
   max_cost_per_run_usd: "20.00"
   concurrency: 1
   source_egress_policy: require-explicit-approval
@@ -19,9 +21,27 @@ ai:
     high_risk_requires_geologist: true
     production_geometry_requires_approval: true
   phase03_workflow:
-    # Analyze the legend once rather than resending it with every georeferenced map tile.
-    legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-74-A_GeologicalMap_Legend_1-50000_v01_raw-scan.jpg
-    feature_source: XV023222_Buduunkhad_2013_L47-74-A_GeologicalMap_1-50000_Georeferenced_EPSG32647_v01.tif
+    # A live run must select an exact source ID. This keeps source-specific interpretations and
+    # cost approvals separate; the CLI will not send this whole catalog accidentally.
+    sources:
+      - source_id: regional-geology-1987-200k
+        legend_source: phase03-registered-sources/1987_MN_L47-XIX_GeologicalMap_Legend_1-200000_v01_raw-scan.jpg
+        feature_source: phase03-imported-sources/regional-geology-1987-200k/source/XV023222_Buduunkhad_1987_L47-XIX_GeologicalMap_1-200000_Georeferenced_EPSG32647_v01.tif
+      - source_id: detailed-geology-2013-50k
+        legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-74-A_GeologicalMap_Legend_1-50000_v01_raw-scan.jpg
+        feature_source: phase03-imported-sources/detailed-geology-2013-50k/source/XV023222_Buduunkhad_2013_L47-74-A_GeologicalMap_1-50000_Georeferenced_EPSG32647_v01.tif
+      - source_id: regional-metallogeny-2020-500k
+        legend_source: phase03-registered-sources/Regional_MetallogenicMap_L47B_Talshand_1M500K_Legend_RawScan_2020_v01.jpg
+        feature_source: phase03-imported-sources/regional-metallogeny-2020-500k/source/regional_metallogenic_map_500k_georef_EPSG32647_v01.tif
+      - source_id: mineral-distribution-2013-100k
+        legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-73-74_MineralDistributionPatternMap_1-100000_v01_raw-scan.jpg
+        feature_source: phase03-imported-sources/mineral-distribution-2013-100k/source/XV023222_Buduunkhad_2013_L47-73-74_MineralDistributionPatternMap_1-100K_Georeferenced_EPSG32647_v01.tif
+      - source_id: prospectivity-2013-50k
+        legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-74-A_ProspectivityAssessmentMap_1-50000_v01_raw-scan.jpg
+        feature_source: phase03-imported-sources/prospectivity-2013-50k/source/XV023222_Buduunkhad_2013_L47-74-A_ProspectivityAssessmentMap_1-50K_Georeferenced_EPSG32647_v01.tif
+      - source_id: source-materials-2013-50k
+        legend_source: phase03-registered-sources/2013_MN_Namalzakh_L47-74-A_SourceMaterialsMap_Legend_1-50000_v01_raw-scan.jpg
+        feature_source: phase03-imported-sources/source-materials-2013-50k/source/XV023222_Buduunkhad_2013_L47-74-A_SourceMaterialsMap_1-50K_Georeferenced_EPSG32647_v01.tif
     legend_tile_size: 4096
     legend_overlap: 256
     feature_tile_size: 1536

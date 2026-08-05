@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from buduunkhad.config import (
     OUTPUT_ROOT_ENV,
@@ -32,6 +33,19 @@ def test_config_loads(project):
     assert config.register_prefix == "XV-023222_Buduunkhad"
     assert config.boundary.input_no == 8
     assert config.boundary.buffers_m == [500, 1000, 5000, 10000, 20000, 25000]
+
+
+def test_config_rejects_unknown_top_level_and_nested_keys(project):
+    config, _register, _tmp = project
+    value = config.model_dump(mode="python")
+    value["unexpected_section"] = {}
+    with pytest.raises(ValidationError, match="unexpected_section"):
+        type(config).model_validate(value)
+
+    value = config.model_dump(mode="python")
+    value["boundary"]["buffers_metres"] = [500]
+    with pytest.raises(ValidationError, match="buffers_metres"):
+        type(config).model_validate(value)
 
 
 def test_register_is_complete(project):

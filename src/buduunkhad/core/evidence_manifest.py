@@ -111,6 +111,13 @@ PHASE03_TARGET_ROLES: dict[str, frozenset[EvidenceRole]] = {
     "source_material_trench_pit_point": frozenset({EvidenceRole.OCCURRENCE}),
 }
 
+# These roles inform Phase 03 synthesis and 03A scoring but do not own one of the adopted
+# seventeen consolidated layers. Their exact manifest record remains executable support evidence
+# without implying that it was merged into a geological target layer.
+PHASE03_STANDALONE_ROLES = frozenset(
+    {EvidenceRole.ALTERATION_SUPPORT, EvidenceRole.GEOCHEMICAL_ANOMALY}
+)
+
 
 def phase03_target_accepts(target_layer: str, role: EvidenceRole) -> bool:
     """Return whether one exact role may populate one externally writable Phase 03 layer."""
@@ -259,8 +266,14 @@ class EvidenceRecord(_StrictModel):
             and self.source_kind
             in {EvidenceSourceKind.PIPELINE_RUN, EvidenceSourceKind.LOCAL_INTAKE}
             and (
-                self.target_layer_name is None
-                or not phase03_target_accepts(self.target_layer_name, self.evidence_role)
+                (
+                    self.target_layer_name is None
+                    and self.evidence_role not in PHASE03_STANDALONE_ROLES
+                )
+                or (
+                    self.target_layer_name is not None
+                    and not phase03_target_accepts(self.target_layer_name, self.evidence_role)
+                )
             )
         ):
             raise ValueError(

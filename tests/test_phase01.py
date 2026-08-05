@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from buduunkhad.core import paths, vector_io
+from buduunkhad.core.crs import RasterAudit
 from buduunkhad.core.gates import GateStatus
 from buduunkhad.core.qaqc import Decision
 from buduunkhad.phases.base import RunContext
@@ -246,3 +249,46 @@ def test_phase01_dry_run_creates_schema(project):
     assert "Dry-run planning summary" in summary_text
     assert "Working copies available\n0/79" in summary_text
     assert "placeholder" not in summary_text.casefold()
+
+
+def test_phase01_qaqc_fails_when_any_raster_is_unreadable(project):
+    config, register, _tmp = project
+    ctx = _ctx(config, register)
+    phase = Phase01DataAudit()
+    phase._raster_audits = [
+        RasterAudit(path="valid.tif", readable=True, crs="EPSG:32647", pixel_aligned=True),
+        RasterAudit(path="broken.tif", readable=False, error="synthetic read failure"),
+    ]
+
+    report = phase.qaqc(ctx)
+    raster = next(item for item in report.items if item.item.startswith("Raster CRS"))
+
+    assert raster.decision is Decision.FAIL
+    assert "1 unreadable" in raster.note
+
+
+@pytest.mark.parametrize(
+    ("audit", "finding"),
+    [
+        (RasterAudit(path="crsless.tif", readable=True, pixel_aligned=True), "1 CRS-less"),
+        (
+            RasterAudit(
+                path="rotated.tif",
+                readable=True,
+                crs="EPSG:32647",
+                pixel_aligned=False,
+            ),
+            "1 rotated/sheared",
+        ),
+    ],
+)
+def test_phase01_qaqc_fails_closed_on_crsless_or_rotated_raster(project, audit, finding):
+    config, register, _tmp = project
+    phase = Phase01DataAudit()
+    phase._raster_audits = [audit]
+
+    report = phase.qaqc(_ctx(config, register))
+    raster = next(item for item in report.items if item.item.startswith("Raster CRS"))
+
+    assert raster.decision is Decision.FAIL
+    assert finding in raster.note

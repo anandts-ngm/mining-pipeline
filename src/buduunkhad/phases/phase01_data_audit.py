@@ -403,6 +403,7 @@ class Phase01DataAudit(Phase):
                 continue
             audit = crs_mod.audit_raster(wc, target_epsg=target)
             self._raster_audits.append(audit)
+            findings = _raster_audit_findings(audit)
             rows.append(
                 {
                     "no": rec.no,
@@ -423,8 +424,8 @@ class Phase01DataAudit(Phase):
                     "extent": ", ".join(f"{v:.4f}" for v in audit.bounds) if audit.bounds else "",
                     "pixel_aligned": audit.pixel_aligned if audit.pixel_aligned is not None else "",
                     "sidecar_status": self._sidecar_status(ctx, rec, wc),
-                    "decision": "Pass" if audit.readable else "Fail",
-                    "note": audit.error or "",
+                    "decision": "Fail" if findings else "Pass",
+                    "note": "; ".join(findings),
                 }
             )
         return rows
@@ -673,6 +674,9 @@ class Phase01DataAudit(Phase):
         expected = {layer.name for layer in ctx.config.master_gpkg_layers}
         layers_ok = expected.issubset(set(self._master_layers))
         validation = self._boundary_validation
+        failed_raster_audits = [
+            item for item in self._raster_audits if _raster_audit_findings(item)
+        ]
         boundary_validation_complete = self._boundary_ok and validation is not None
         if boundary_validation_complete and validation is not None:
             try:
@@ -713,8 +717,19 @@ class Phase01DataAudit(Phase):
         report.add(
             "Raster CRS/resolution/extent/nodata/band count checked",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PASS if self._raster_audits else Decision.PENDING,
-            note=f"{len(self._raster_audits)} raster(s) audited.",
+            decision=(
+                Decision.PASS
+                if self._raster_audits and not failed_raster_audits
+                else Decision.FAIL
+                if self._raster_audits
+                else Decision.PENDING
+            ),
+            note=(
+                f"{len(self._raster_audits)} raster(s) audited; "
+                f"{sum(not item.readable for item in self._raster_audits)} unreadable; "
+                f"{sum(item.readable and not item.crs for item in self._raster_audits)} CRS-less; "
+                f"{sum(item.readable and item.pixel_aligned is False for item in self._raster_audits)} rotated/sheared."
+            ),
         )
         report.add(
             "Scan georeference residual and confidence logged",
@@ -746,6 +761,21 @@ class Phase01DataAudit(Phase):
 # --------------------------------------------------------------------------- #
 # module-level helpers
 # --------------------------------------------------------------------------- #
+
+
+def _raster_audit_findings(audit: crs_mod.RasterAudit) -> tuple[str, ...]:
+    findings: list[str] = []
+    if not audit.readable:
+        findings.append(audit.error or "raster is unreadable")
+        return tuple(findings)
+    if not audit.crs:
+        findings.append("raster has no declared CRS")
+    if audit.pixel_aligned is False:
+        findings.append("raster grid is rotated or sheared")
+    if audit.pixel_aligned is None:
+        findings.append("raster grid alignment was not measured")
+    return tuple(findings)
+
 
 _CRS_LOG_COLUMNS = [
     "no",

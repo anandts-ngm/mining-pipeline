@@ -18,20 +18,21 @@ obligations:
       - qualified flight and HSE authorities
     source_refs: [methodology.master-v9, phase05.guide, METH-DISC-048, METH-DISC-069]
   - obligation_id: METH-READY-002
-    subject: kompsat-licence-and-readiness-exclusion
+    subject: kompsat-external-use-licence-exclusion
     affected_phases: ["02", "05"]
     status: excluded
     blocks_phase_completion: false
-    decision: Exclude KOMPSAT imagery from processing, provider egress and publication until licence and technical readiness evidence are complete; Phase 02 may finish other datasets with an explicit data gap.
+    decision: Permit exact-source local deterministic processing under METH-DISC-074 after RPC, sidecar, CRS and DEM checks succeed; exclude provider egress and external publication until the licence evidence is complete.
     required_evidence:
       - KOMPSATEULAForm_3.1.pdf with owner/legal interpretation.
-      - Exact bundle identity, complete RPC/EPH/TXT sidecars and orthorectification readiness evidence.
+      - Exact bundle identity, complete RPC/EPH/TXT sidecars and the sealed local processing record (implemented; retained here as external-use provenance).
     deterministic_next_steps:
-      - Continue checksum, inventory and sidecar-completeness reporting without opening or transmitting imagery.
+      - Continue local exact-source processing and sealed QA/QC without transmitting KOMPSAT bytes.
+      - Keep Drive/external publication disabled until the EULA and owner/legal interpretation are supplied.
     required_human_authority:
       - project owner and legal for licence interpretation
       - geospatial data custodian for technical readiness
-    source_refs: [methodology.master-v9, METH-DISC-049, METH-DISC-056]
+    source_refs: [methodology.master-v9, METH-DISC-049, METH-DISC-056, METH-DISC-074]
   - obligation_id: METH-READY-003
     subject: aster-hdf-technical-validation
     affected_phases: ["02"]
@@ -92,7 +93,9 @@ obligations:
       - Completed and reviewed 03A deposit-model matrix.
       - Explicit Phase 03 scientific handoff record.
     deterministic_next_steps:
-      - Prepare the implemented source-specific review packages, resolve overlap findings, complete the structured 03A assessment and critique, then obtain the project-geologist review and exact scientific handoff.
+      - Configure every approved historical source in the implemented batch workflow, execute its exact review package, and resolve every ambiguous overlap finding.
+      - Complete the implemented eight-criterion 100-point 03A assessment and independent critique against accepted evidence.
+      - Obtain the project-geologist review and resolve the exact scientific handoff.
     required_human_authority:
       - project geologist
     source_refs: [methodology.master-v9, phase03.guide, METH-DISC-040, METH-DISC-062, METH-DISC-067]

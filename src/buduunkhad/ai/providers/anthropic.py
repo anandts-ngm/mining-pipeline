@@ -17,6 +17,7 @@ from buduunkhad.ai.providers.base import (
     ProviderExecutionResult,
     ProviderResponseError,
     decode_provider_json,
+    provider_execution_error,
 )
 
 
@@ -57,7 +58,6 @@ class AnthropicProvider:
                     },
                 }
             )
-        execution_failed = False
         try:
             response = client.messages.create(
                 model=call.model,
@@ -72,10 +72,12 @@ class AnthropicProvider:
                 },
                 timeout=call.timeout_seconds,
             )
-        except Exception:  # SDK boundary: deliberately discard potentially sensitive details.
-            execution_failed = True
-        if execution_failed:
-            raise AIProviderError("Anthropic execution failed")
+        except Exception as exc:
+            raise provider_execution_error(
+                "anthropic",
+                exc,
+                sensitive_values=(os.environ.get("ANTHROPIC_API_KEY"),),
+            ) from None
         response_id = getattr(response, "id", None)
         if not isinstance(response_id, str) or not response_id.strip():
             raise ProviderResponseError("Anthropic response did not contain a response ID")
@@ -103,14 +105,14 @@ def _create_client(timeout_seconds: float) -> object:
         raise ProviderDependencyError(
             "Anthropic execution requires the optional 'anthropic' project extra"
         ) from exc
-    construction_failed = False
     try:
         return client_class(api_key=api_key, timeout=timeout_seconds)
-    except Exception:
-        construction_failed = True
-    if construction_failed:
-        raise AIProviderError("Anthropic client construction failed")
-    raise AssertionError("unreachable")
+    except Exception as exc:
+        raise provider_execution_error(
+            "anthropic",
+            exc,
+            sensitive_values=(api_key,),
+        ) from None
 
 
 def _output_text(response: object) -> str:

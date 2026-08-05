@@ -30,6 +30,7 @@ class LedgerStatus(StrEnum):
     RUNNING = "RUNNING"
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
+    RECOVERED = "RECOVERED"
     INGESTED = "INGESTED"
     PROCESSED = "PROCESSED"
 
@@ -96,7 +97,12 @@ class LedgerJobView(BaseModel):
                 event.occurred_at
                 for event in reversed(self.events)
                 if event.status
-                in {LedgerStatus.SUCCEEDED, LedgerStatus.INGESTED, LedgerStatus.PROCESSED}
+                in {
+                    LedgerStatus.SUCCEEDED,
+                    LedgerStatus.RECOVERED,
+                    LedgerStatus.INGESTED,
+                    LedgerStatus.PROCESSED,
+                }
             ),
             None,
         )
@@ -115,8 +121,9 @@ _TRANSITIONS: dict[LedgerStatus, frozenset[LedgerStatus]] = {
     ),
     LedgerStatus.RUNNING: frozenset({LedgerStatus.SUCCEEDED, LedgerStatus.FAILED}),
     LedgerStatus.SUCCEEDED: frozenset({LedgerStatus.INGESTED, LedgerStatus.PROCESSED}),
+    LedgerStatus.RECOVERED: frozenset({LedgerStatus.INGESTED}),
     LedgerStatus.INGESTED: frozenset({LedgerStatus.PROCESSED, LedgerStatus.FAILED}),
-    LedgerStatus.FAILED: frozenset(),
+    LedgerStatus.FAILED: frozenset({LedgerStatus.RECOVERED}),
     LedgerStatus.PROCESSED: frozenset(),
 }
 
@@ -192,6 +199,25 @@ class AIJobLedger:
             current, previous_time = self._current_state(connection, job_id)
             if status not in _TRANSITIONS[current]:
                 raise JobLedgerError(f"invalid job transition: {current.value} -> {status.value}")
+            if status is LedgerStatus.RECOVERED:
+                previous = connection.execute(
+                    """
+                    SELECT error_category
+                    FROM job_events
+                    WHERE job_id = ?
+                    ORDER BY sequence DESC
+                    LIMIT 1
+                    """,
+                    (job_id,),
+                ).fetchone()
+                if previous is None or previous["error_category"] != "LocalCommandTimeout":
+                    raise JobLedgerError(
+                        "late response recovery requires a recorded local command timeout"
+                    )
+                if response_file is None or response_sha256 is None or usage is None:
+                    raise JobLedgerError(
+                        "late response recovery requires exact response bytes and usage"
+                    )
             if max_concurrency is not None:
                 if status is not LedgerStatus.RUNNING or max_concurrency < 1:
                     raise JobLedgerError("concurrency limit applies only to valid job starts")

@@ -11,7 +11,6 @@ buduunkhad phase00 / phase01 / ... --dry-run   # run a single phase
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, cast
@@ -543,21 +542,28 @@ def run(
         "--upload-results/--no-upload-results",
         help="After a real run, curate and upload outputs when an upload root is configured.",
     ),
-    offline_ai: bool = typer.Option(
+    live_ai: bool = typer.Option(
         False,
-        "--offline-ai",
-        help="Explicitly skip the configured AI-first Phase 03 provider workflow.",
+        "--ai/--offline-ai",
+        help="Explicitly execute or skip the configured AI-first Phase 03 provider workflow.",
     ),
     ai_approved_by: str | None = typer.Option(
         None,
         "--ai-approved-by",
-        envvar="BUDUUNKHAD_AI_EGRESS_APPROVER",
         help="Named person authorizing the configured Phase 03 source package egress.",
     ),
     ai_approval_note: str = typer.Option(
         "Run-scoped approval for the configured Phase 03 AI-first source packages.",
         "--ai-approval-note",
         help="Reason recorded in each exact package-level egress approval.",
+    ),
+    ai_source: list[str] | None = typer.Option(
+        None,
+        "--ai-source",
+        help=(
+            "Configured Phase 03 source ID to execute; repeatable. Required when the AI profile "
+            "contains multiple sources so a run cannot egress every map accidentally."
+        ),
     ),
 ) -> None:
     """Run deterministic phases and the configured Phase 03 AI-first workflow."""
@@ -566,7 +572,6 @@ def run(
     except LocalEnvError as exc:
         typer.secho(f"Local environment error: {exc}", fg="red", err=True)
         raise typer.Exit(2) from exc
-    ai_approved_by = ai_approved_by or os.environ.get("BUDUUNKHAD_AI_EGRESS_APPROVER")
     resolved_ai_config = ai_config
     if resolved_ai_config is None:
         candidate = config.with_name("ai.openai.yaml")
@@ -578,16 +583,33 @@ def run(
         selected = select_phases(build_registry(), from_=from_, to=to, only=only_list)
         ai_selected = (
             not dry_run
-            and not offline_ai
+            and live_ai
             and cfg.ai.enabled
             and cfg.ai.phase03_workflow is not None
             and any(phase.id == "03" for phase in selected)
         )
         if ai_selected and not (ai_approved_by or "").strip():
-            raise SelectionError(
-                "AI-first Phase 03 requires --ai-approved-by or "
-                "BUDUUNKHAD_AI_EGRESS_APPROVER; use --offline-ai for an explicit offline run"
-            )
+            raise SelectionError("AI-first Phase 03 requires --ai-approved-by for this exact run")
+        selected_ai_source_ids: tuple[str, ...] = ()
+        if ai_selected:
+            workflow = cfg.ai.phase03_workflow
+            assert workflow is not None
+            if ai_source:
+                selected_ai_source_ids = tuple(ai_source)
+            elif len(workflow.configured_sources) == 1:
+                selected_ai_source_ids = (workflow.configured_sources[0].source_id,)
+            else:
+                raise SelectionError(
+                    "AI profile contains multiple Phase 03 sources; select each intended source "
+                    "with --ai-source"
+                )
+            if len(selected_ai_source_ids) != len(set(selected_ai_source_ids)):
+                raise SelectionError("--ai-source values must be unique")
+            for source_id in selected_ai_source_ids:
+                try:
+                    workflow.source(source_id)
+                except ValueError as exc:
+                    raise SelectionError(str(exc)) from exc
         input_runs = _parse_input_run_selectors(input_run)
         phase_modes = _parse_phase_mode_selectors(phase_mode)
         manifest = run_pipeline(
@@ -615,32 +637,60 @@ def run(
     review_project: Path | None = None
     review_packages: tuple[Path, ...] = ()
     if ai_selected:
-        from buduunkhad.geospatial_ai.ai_first import run_phase03_ai_first
+        from buduunkhad.geospatial_ai.ai_first import (
+            run_phase03_ai_first,
+            run_phase03_ai_first_batch,
+        )
 
         try:
-            ai_manifest_path, ai_manifest = run_phase03_ai_first(
-                cfg,
-                pipeline_run_id=manifest.run_id,
-                approved_by=cast(str, ai_approved_by),
-                approval_note=ai_approval_note,
-            )
+            workflow = cfg.ai.phase03_workflow
+            assert workflow is not None
+            if len(selected_ai_source_ids) == 1:
+                ai_manifest_path, ai_manifest = run_phase03_ai_first(
+                    cfg,
+                    pipeline_run_id=manifest.run_id,
+                    approved_by=cast(str, ai_approved_by),
+                    approval_note=ai_approval_note,
+                    source_id=selected_ai_source_ids[0],
+                )
+                run_directory = cfg.runs_root / ai_manifest.ai_run_id
+                review_project = run_directory / ai_manifest.integrated_project_path
+                review_packages = (run_directory / ai_manifest.review_package_path,)
+                typer.secho("AI-first Phase 03 completed.", fg="green")
+                typer.echo(f"AI attempt: {ai_manifest.ai_run_id}")
+                typer.echo(f"AI manifest: {ai_manifest_path}")
+                typer.echo(f"Integrated QGIS review: {review_project}")
+            else:
+                batch_path, batch = run_phase03_ai_first_batch(
+                    cfg,
+                    pipeline_run_id=manifest.run_id,
+                    approved_by=cast(str, ai_approved_by),
+                    approval_note=ai_approval_note,
+                    source_ids=selected_ai_source_ids,
+                )
+                review_packages = tuple(
+                    cfg.runs_root / item.review_package_path for item in batch.sessions
+                )
+                typer.secho("AI-first Phase 03 batch completed.", fg="green")
+                typer.echo(f"AI batch: {batch.batch_run_id}")
+                typer.echo(f"AI batch manifest: {batch_path}")
+                for item in batch.sessions:
+                    typer.echo(
+                        f"{item.source_id} QGIS review: "
+                        f"{cfg.runs_root / item.integrated_project_path}"
+                    )
         except (OSError, ValueError, RuntimeError) as exc:
             typer.secho(f"AI-first Phase 03 failed: {exc}", fg="red", err=True)
             raise typer.Exit(2) from exc
-        run_directory = cfg.runs_root / ai_manifest.ai_run_id
-        review_project = run_directory / ai_manifest.integrated_project_path
-        review_packages = (run_directory / ai_manifest.review_package_path,)
-        typer.secho("AI-first Phase 03 completed.", fg="green")
-        typer.echo(f"AI attempt: {ai_manifest.ai_run_id}")
-        typer.echo(f"AI manifest: {ai_manifest_path}")
-        typer.echo(f"Integrated QGIS review: {review_project}")
     elif (
         not dry_run
-        and offline_ai
+        and not live_ai
         and cfg.ai.enabled
         and any(phase.id == "03" for phase in selected)
     ):
-        typer.secho("AI-first Phase 03 explicitly skipped by --offline-ai.", fg="yellow")
+        typer.secho(
+            "AI-first Phase 03 not executed; use --ai for live provider calls.", fg="yellow"
+        )
     if not manifest.dry_run and (
         cfg.results_mirror_root is not None or cfg.results_upload_root is not None
     ):

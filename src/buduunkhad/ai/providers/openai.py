@@ -17,6 +17,7 @@ from buduunkhad.ai.providers.base import (
     ProviderExecutionResult,
     ProviderResponseError,
     decode_provider_json,
+    provider_execution_error,
 )
 
 
@@ -59,7 +60,6 @@ class OpenAIProvider:
                     "detail": image.detail,
                 }
             )
-        execution_failed = False
         try:
             reasoning = {
                 key: value
@@ -88,10 +88,12 @@ class OpenAIProvider:
                 **({"reasoning": reasoning} if reasoning else {}),
                 **({"store": call.store_response} if call.store_response is not None else {}),
             )
-        except Exception:  # SDK boundary: deliberately discard potentially sensitive details.
-            execution_failed = True
-        if execution_failed:
-            raise AIProviderError("OpenAI execution failed")
+        except Exception as exc:
+            raise provider_execution_error(
+                "openai",
+                exc,
+                sensitive_values=(os.environ.get("OPENAI_API_KEY"),),
+            ) from None
         response_id = getattr(response, "id", None)
         if not isinstance(response_id, str) or not response_id.strip():
             raise ProviderResponseError("OpenAI response did not contain a response ID")
@@ -120,23 +122,45 @@ def _create_client(timeout_seconds: float) -> object:
         raise ProviderDependencyError(
             "OpenAI execution requires the optional 'openai' project extra"
         ) from exc
-    construction_failed = False
     try:
         return client_class(api_key=api_key, timeout=timeout_seconds)
-    except Exception:
-        construction_failed = True
-    if construction_failed:
-        raise AIProviderError("OpenAI client construction failed")
-    raise AssertionError("unreachable")
+    except Exception as exc:
+        raise provider_execution_error(
+            "openai",
+            exc,
+            sensitive_values=(api_key,),
+        ) from None
 
 
 def _usage(response: object) -> AIUsage:
     value = getattr(response, "usage", None)
     input_tokens = getattr(value, "input_tokens", 0) if value is not None else 0
     output_tokens = getattr(value, "output_tokens", 0) if value is not None else 0
-    if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+    input_details = getattr(value, "input_tokens_details", None) if value is not None else None
+    output_details = getattr(value, "output_tokens_details", None) if value is not None else None
+    cached_input_tokens = (
+        getattr(input_details, "cached_tokens", 0) if input_details is not None else 0
+    )
+    reasoning_output_tokens = (
+        getattr(output_details, "reasoning_tokens", 0) if output_details is not None else 0
+    )
+    if not all(
+        isinstance(item, int)
+        for item in (
+            input_tokens,
+            cached_input_tokens,
+            output_tokens,
+            reasoning_output_tokens,
+        )
+    ):
         raise ProviderResponseError("OpenAI response usage is malformed")
-    return AIUsage(input_tokens=input_tokens, output_tokens=output_tokens, requests=1)
+    return AIUsage(
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        reasoning_output_tokens=reasoning_output_tokens,
+        requests=1,
+    )
 
 
 def _output_text(response: object) -> str:

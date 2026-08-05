@@ -29,6 +29,7 @@ from buduunkhad.ai.providers import (
     ProviderCall,
     ProviderCredentialError,
     ProviderDependencyError,
+    ProviderExecutionError,
     ProviderImage,
     ProviderResponseError,
     decode_provider_json,
@@ -239,6 +240,24 @@ def test_openai_injected_client_executes_without_sdk_or_key(
     assert image["detail"] == "original"
 
 
+def test_openai_usage_records_cached_and_reasoning_tokens() -> None:
+    detailed = OpenAIResponsesDouble(
+        input_tokens=100,
+        cached_input_tokens=40,
+        output_tokens=80,
+        reasoning_output_tokens=60,
+    )
+    call = _call("openai").model_copy(update={"max_output_tokens": 100})
+    result = OpenAIProvider(client=provider_client("responses", detailed)).execute(call)
+    assert result.usage == AIUsage(
+        input_tokens=100,
+        cached_input_tokens=40,
+        output_tokens=80,
+        reasoning_output_tokens=60,
+        requests=1,
+    )
+
+
 @pytest.mark.parametrize(
     "output_model",
     [
@@ -401,10 +420,13 @@ def test_injected_provider_failure_does_not_expose_request_or_environment_key(
     key = "synthetic-private-provider-key"
     monkeypatch.setenv("OPENAI_API_KEY", key)
 
-    with pytest.raises(AIProviderError) as caught:
+    with pytest.raises(ProviderExecutionError) as caught:
         OpenAIProvider(client=provider_client("responses", FailingResponsesDouble(key))).execute(
             _call("openai")
         )
+    assert caught.value.provider_error_type == "RuntimeError"
+    assert caught.value.error_category == "openai:RuntimeError"
+    assert "[redacted]" in str(caught.value)
     assert key not in str(caught.value)
 
 

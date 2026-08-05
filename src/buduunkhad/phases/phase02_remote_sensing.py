@@ -8,10 +8,9 @@ Implements the adopted automatable Phase 02 core recorded in
    writing Cloud-Optimized GeoTIFFs (tiled + internal overviews + lossless compression).
 2. Derive DEM terrain layers (multi-azimuth hillshade, slope, aspect, terrain
    ruggedness, profile/plan curvature, flow-accumulation) from the clipped DEMs.
-3. Emit formula-complete method notes for the tool-bound steps we cannot run in-pipeline:
-   Sentinel-2 indices/masks/composites (need bands B02-B12 via SNAP Sen2Cor — our inputs
-   are received composites), ASTER HDF alteration scoring (SNAP/ILWIS), and KOMPSAT-2 RPC
-   orthorectification + pan-sharpening (Global Mapper/ILWIS/GDAL).
+3. Process the exact supplementary Sentinel L2A SAFE source and the exact KOMPSAT-2 L1G/RPC
+   bundle when present. KOMPSAT processing uses the registered ALOS DEM for RPC terrain
+   correction and remains local while its external-use licence record is absent.
 
 Every output is **support evidence only — not ore proof** (guides §1/§16).
 """
@@ -26,14 +25,17 @@ from buduunkhad.core import (
     aster_readiness,
     dem,
     hydrology,
+    kompsat,
     lineaments,
     naming,
     raster_writers,
     registers,
+    sentinel,
     vector_io,
 )
 from buduunkhad.core import crs as crs_mod
 from buduunkhad.core.qaqc import RECORDED_ACCEPTANCE, Decision, QAQCReport, new_report
+from buduunkhad.geospatial_ai.methodology import load_phase02_processing_contract
 from buduunkhad.phases.base import Phase, PhaseResult, RunContext
 
 # Support-evidence stamp required on every Phase 02 output (guides §13/§16).
@@ -74,7 +76,7 @@ _DEM_CATEGORICAL = {10}  # only #10 (NumObservations) is a true count raster; #1
 _SENTINEL = {74, 77, 78}  # received composites/ratio stacks -> reproject+clip(1 km)+COG
 _BASEMAP_NOCLIP = {75}  # 2.4 m Google basemap -> reproject only
 _BASEMAP_CLIP = {76}  # 0.15 m high-res basemap -> reproject + clip 1 km
-_KOMPSAT_BANDS = {24, 28, 32, 36, 40}  # method-note only (RPC ortho is external)
+_KOMPSAT_BANDS = {24, 28, 32, 36, 40}
 _ASTER_HDF = {73}  # frozen support chain when HDF4-capable gdalwarp exists, else method note
 
 _DEM_CLIP_M = 5000
@@ -173,6 +175,13 @@ class Phase02RemoteSensing(Phase):
     _hydrology_note: str  # "" until attempted; then a produced/skipped summary
     _lineaments_note: str
     _vector_outputs: list[Path]  # hydrology/lineament GPKGs (not COGs)
+    _sentinel_safe_processed: bool
+    _sentinel_safe_note: str
+    _sentinel_extras: list[Path]
+    _kompsat_inventory_path: Path | None
+    _kompsat_inventory_note: str
+    _kompsat_processing_path: Path | None
+    _kompsat_processing_note: str
 
     def __init__(self) -> None:
         self._rows = []
@@ -191,6 +200,13 @@ class Phase02RemoteSensing(Phase):
         self._hydrology_note = ""
         self._lineaments_note = ""
         self._vector_outputs = []
+        self._sentinel_safe_processed = False
+        self._sentinel_safe_note = ""
+        self._sentinel_extras = []
+        self._kompsat_inventory_path = None
+        self._kompsat_inventory_note = ""
+        self._kompsat_processing_path = None
+        self._kompsat_processing_note = ""
 
     # ------------------------------------------------------------------ #
 
@@ -228,7 +244,9 @@ class Phase02RemoteSensing(Phase):
                 self._rows.append(self._do_aster(ctx, rec, pdir, dem_aoi))
                 continue
             if rec.no in _KOMPSAT_BANDS:
-                self._rows.append(self._note_row(ctx, rec, "KOMPSAT band → RPC ortho method note"))
+                self._rows.append(
+                    self._note_row(ctx, rec, "KOMPSAT band → exact-bundle RPC+DEM processing")
+                )
                 continue
             if rec.file_type != "raster":
                 continue  # sidecars / browse / thumbnail / pdf
@@ -294,6 +312,10 @@ class Phase02RemoteSensing(Phase):
                     )
                 )
 
+        self._do_sentinel_safe(ctx, pdir, sentinel_aoi)
+        self._do_kompsat_inventory(ctx, pdir)
+        self._do_kompsat_processing(ctx, pdir, sentinel_aoi)
+
         # Post-loop vector products derived from the clipped DEM + its hillshades: the
         # contour/drainage/watershed package (guide §04.5, previously method-note-only) and the
         # first-pass lineament draft. Both degrade to a note when their optional dep is absent.
@@ -313,6 +335,12 @@ class Phase02RemoteSensing(Phase):
             result.add_output(p)
         for p in self._vector_outputs:
             result.add_output(p)
+        for p in self._sentinel_extras:
+            result.add_output(p)
+        if self._kompsat_inventory_path is not None:
+            result.add_output(self._kompsat_inventory_path)
+        if self._kompsat_processing_path is not None:
+            result.add_output(self._kompsat_processing_path)
         result.log(
             f"reprojected/clipped {self._reprojected} raster(s) → COG; "
             f"{self._derivatives} terrain derivative(s); {self._skipped} skipped (no overlap); "
@@ -322,6 +350,9 @@ class Phase02RemoteSensing(Phase):
                 if self._aster_processed
                 else "; ASTER: method-note fallback"
             )
+            + f"; Sentinel SAFE: {self._sentinel_safe_note or 'not attempted'}"
+            + f"; KOMPSAT inventory: {self._kompsat_inventory_note or 'not attempted'}"
+            + f"; KOMPSAT processing: {self._kompsat_processing_note or 'not attempted'}"
         )
         return result
 
@@ -352,6 +383,270 @@ class Phase02RemoteSensing(Phase):
     # ------------------------------------------------------------------ #
     # per-raster processing
     # ------------------------------------------------------------------ #
+
+    def _do_sentinel_safe(self, ctx: RunContext, pdir: Path, aoi) -> None:
+        """Process one exact supplementary L2A SAFE archive when Phase 00 contains it."""
+
+        profile = load_phase02_processing_contract().supplementary_sentinel_safe
+        try:
+            source = sentinel.resolve_safe_archive(
+                ctx.phase_dir("00"),
+                profile.archive_relative_path,
+                expected_sha256=profile.source_sha256,
+                expected_size_bytes=profile.source_size_bytes,
+            )
+        except sentinel.SentinelProcessingError as exc:
+            self._sentinel_safe_note = f"unavailable: {exc}; received-derivative branch retained"
+            return
+        if aoi is None:
+            self._failed += 1
+            self._sentinel_safe_note = "failed: Phase 01 1 km Sentinel AOI is missing"
+            return
+
+        cfg = ctx.config
+        epsg_tag = naming.epsg_tag(cfg.target_epsg)
+        composite_dir = pdir / "01_Sentinel2_SNAP13" / "05_Composites"
+        index_dir = pdir / "01_Sentinel2_SNAP13" / "04_Indices"
+        mask_dir = pdir / "01_Sentinel2_SNAP13" / "03_Masks"
+        products = {
+            "NaturalRGB": composite_dir,
+            "Geology_RGB_B12_B08_B03": composite_dir,
+            "FalseColor_B08_B04_B03": composite_dir,
+            "LithologyIndex_B11B12_B08B11_B04B03": index_dir,
+            "NDVI": index_dir,
+            "NDWI": index_dir,
+            "VegetationMask": mask_dir,
+            "WaterMask": mask_dir,
+            "CloudShadowMask": mask_dir,
+            "UsablePixelMask": mask_dir,
+            "IronOxideIndex_B04B02": index_dir,
+            "FerricIndex_B11B08": index_dir,
+            "ClaySWIRIndex_B11B12": index_dir,
+            "FerrousIndex_B12B08": index_dir,
+            "BrightnessIndex": index_dir,
+        }
+        output_paths = {
+            product: directory
+            / naming.data_name(
+                cfg.data_prefix,
+                f"Sentinel2_{product}",
+                crs_or_param=epsg_tag,
+                version=1,
+                ext="tif",
+            )
+            for product, directory in products.items()
+        }
+        record_path = (
+            pdir
+            / "01_Sentinel2_SNAP13"
+            / "02_QAQC"
+            / f"{cfg.register_prefix}_Sentinel2_SAFE_Processing_Record.json"
+        )
+        try:
+            processed = sentinel.process_safe_archive(
+                source,
+                aoi,
+                output_paths,
+                record_path,
+                source_run_id=ctx.source_run_id_for("00"),
+                processing_run_id=ctx.run_id,
+                target_epsg=cfg.target_epsg,
+                target_resolution_m=profile.target_resolution_m,
+                clip_buffer_m=profile.clip_buffer_m,
+            )
+        except Exception as exc:  # noqa: BLE001 - preserve other Phase 02 outputs and fail QA/QC
+            self._failed += 1
+            self._sentinel_safe_note = f"failed: {type(exc).__name__}: {str(exc)[:160]}"
+            ctx.logger.warning("Sentinel SAFE processing failed: %s", exc)
+            return
+        self._sentinel_safe_processed = True
+        self._outputs.extend(processed.outputs)
+        self._sentinel_extras.append(processed.record_path)
+        self._sentinel_safe_note = (
+            f"{len(processed.outputs)} product(s), "
+            f"{processed.record.valid_pixel_count} valid 10 m pixel(s)"
+        )
+        self._rows.append(
+            {
+                "no": "supplementary-safe",
+                "filename": source.name,
+                "source_group": "07_Basemap_Sentinel2_ASTER/Sentinel2_L2A_SAFE",
+                "native_epsg": "SAFE granule metadata",
+                "output_crs": f"EPSG:{cfg.target_epsg}",
+                "processing_action": "L2A SAFE align/clip/reflectance/composites/indices/masks",
+                "clip_buffer": f"{_SENTINEL_CLIP_M // 1000}km",
+                "compression": "DEFLATE COG",
+                "output": processed.record_path.name,
+                "derivative": f"{len(processed.outputs)} deterministic raster products",
+                "validation_status": SUPPORT_VALIDATION,
+                "limitation": SUPPORT_LIMITATION,
+                "decision": "Pass",
+                "note": "BOA quantification and per-band additive offsets applied from MTD_MSIL2A.xml.",
+            }
+        )
+
+    def _do_kompsat_inventory(self, ctx: RunContext, pdir: Path) -> None:
+        """Record the exact bundle/sidecar bytes without opening excluded imagery."""
+
+        phase00 = ctx.phase_dir("00")
+        input_roles = (("PAN", 24), ("GREEN", 28), ("BLUE", 32), ("NIR", 36), ("RED", 40))
+        images = {
+            role: phase00
+            / ctx.record_by_no(input_no).evidence_group
+            / ctx.record_by_no(input_no).filename
+            for role, input_no in input_roles
+        }
+        record_path = (
+            pdir
+            / "03_KOMPSAT2_ILWIS368_QGIS"
+            / "02_Metadata_RPC_EPH_Check"
+            / f"{ctx.config.register_prefix}_KOMPSAT2_Bundle_Inventory_Record.json"
+        )
+        try:
+            record = kompsat.inventory_bundle(
+                phase00,
+                images,
+                record_path,
+                source_run_id=ctx.source_run_id_for("00"),
+                processing_run_id=ctx.run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - preserve unrelated Phase 02 products
+            self._kompsat_inventory_note = f"failed: {type(exc).__name__}: {str(exc)[:160]}"
+            ctx.logger.warning("KOMPSAT inventory failed: %s", exc)
+            return
+        self._kompsat_inventory_path = record_path
+        file_count = sum(1 + len(asset.sidecars) for asset in record.assets)
+        self._kompsat_inventory_note = (
+            f"{len(record.assets)} image parent(s) and {file_count - len(record.assets)} "
+            "required sidecar(s) hash-bound before processing"
+        )
+
+    def _do_kompsat_processing(self, ctx: RunContext, pdir: Path, aoi) -> None:
+        """Create the guide-named local KOMPSAT support products from exact source bytes."""
+
+        if self._kompsat_inventory_path is None:
+            self._kompsat_processing_note = "unavailable: exact bundle inventory did not pass"
+            return
+        if aoi is None:
+            self._kompsat_processing_note = "unavailable: Phase 01 1 km AOI is missing"
+            return
+
+        profile = load_phase02_processing_contract().kompsat_profile
+        phase00 = ctx.phase_dir("00")
+        input_roles = (("PAN", 24), ("GREEN", 28), ("BLUE", 32), ("NIR", 36), ("RED", 40))
+        images = {
+            role: phase00
+            / ctx.record_by_no(input_no).evidence_group
+            / ctx.record_by_no(input_no).filename
+            for role, input_no in input_roles
+        }
+        dem_record = ctx.record_by_no(profile.rpc_dem_input_number)
+        dem_path = phase00 / dem_record.evidence_group / dem_record.filename
+        base = pdir / "03_KOMPSAT2_ILWIS368_QGIS"
+        prefix = ctx.config.data_prefix
+        epsg_tag = naming.epsg_tag(profile.target_epsg)
+        output_paths = {
+            "pan_ortho": base
+            / "04_Orthorectification"
+            / naming.data_name(
+                prefix, "KOMPSAT2_PAN_Orthorectified", crs_or_param=epsg_tag, version=1, ext="tif"
+            ),
+            "ms_ortho_bundle": base
+            / "04_Orthorectification"
+            / naming.data_name(
+                prefix,
+                "KOMPSAT2_MS_Orthorectified_Bundle",
+                crs_or_param=epsg_tag,
+                version=1,
+                ext="tif",
+            ),
+            "ms_stack": base
+            / "03_Band_Stack"
+            / naming.data_name(
+                prefix, "KOMPSAT2_MS_BandStack_BGRNIR", crs_or_param=epsg_tag, version=1, ext="tif"
+            ),
+            "true_color": base
+            / "03_Band_Stack"
+            / naming.data_name(
+                prefix, "KOMPSAT2_TrueColor_RGB", crs_or_param=epsg_tag, version=1, ext="tif"
+            ),
+            "false_color": base
+            / "03_Band_Stack"
+            / naming.data_name(
+                prefix,
+                "KOMPSAT2_FalseColor_NIR_Red_Green",
+                crs_or_param=epsg_tag,
+                version=1,
+                ext="tif",
+            ),
+            "ndvi": base
+            / "06_NDVI_Lineament_Outcrop"
+            / naming.data_name(
+                prefix, "KOMPSAT2_NDVI", crs_or_param=epsg_tag, version=1, ext="tif"
+            ),
+            "pansharpened": base
+            / "05_Pansharpen"
+            / naming.data_name(
+                prefix,
+                "KOMPSAT2_Pansharpened_Orthobasemap",
+                crs_or_param=epsg_tag,
+                version=1,
+                ext="tif",
+            ),
+        }
+        interpretation_path = (
+            base
+            / "06_NDVI_Lineament_Outcrop"
+            / naming.data_name(
+                prefix,
+                "KOMPSAT2_Lineament_Outcrop_Interpretation",
+                crs_or_param=epsg_tag,
+                version=1,
+                ext="gpkg",
+            )
+        )
+        record_path = (
+            base / "07_QAQC" / f"{ctx.config.register_prefix}_KOMPSAT2_Processing_Record.json"
+        )
+        try:
+            processed = kompsat.process_bundle(
+                phase00,
+                images,
+                dem_path,
+                aoi,
+                pdir,
+                output_paths,
+                interpretation_path,
+                record_path,
+                source_run_id=ctx.source_run_id_for("00"),
+                processing_run_id=ctx.run_id,
+                target_epsg=profile.target_epsg,
+                clip_buffer_m=profile.clip_buffer_m,
+                pan_resolution_m=profile.pan_resolution_m,
+                multispectral_resolution_m=profile.multispectral_resolution_m,
+                licence_record_present=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep unrelated Phase 02 products available
+            self._kompsat_processing_note = f"unavailable: {type(exc).__name__}: {str(exc)[:180]}"
+            ctx.logger.warning("KOMPSAT processing unavailable: %s", exc)
+            return
+
+        self._outputs.extend(processed.raster_outputs)
+        self._vector_outputs.append(processed.interpretation_path)
+        self._kompsat_processing_path = processed.record_path
+        self._kompsat_processing_note = (
+            f"{len(processed.raster_outputs)} COG(s), "
+            f"{processed.record.lineament_feature_count} machine lineament candidate(s), "
+            f"NDVI {processed.record.ndvi_min:.3f}..{processed.record.ndvi_max:.3f}"
+        )
+        for row in self._rows:
+            if row.get("no") in _KOMPSAT_BANDS:
+                row.update(
+                    output=processed.record_path.name,
+                    derivative="RPC+DEM ortho / stack / composite / NDVI / Brovey support products",
+                    decision="Pass",
+                    note="Exact source, embedded RPC and registered ALOS DEM validated locally.",
+                )
 
     def _do_passthrough(
         self,
@@ -975,11 +1270,23 @@ class Phase02RemoteSensing(Phase):
             note=f"Stamped on all {len(self._rows)} log rows and the method notes.",
         )
         report.add(
-            "Sentinel indices / KOMPSAT ortho (external SNAP/ILWIS steps)",
+            "Sentinel-2 L2A SAFE composites, indices and masks",
             RECORDED_ACCEPTANCE,
-            decision=Decision.PENDING,
-            note="Orchestrated steps — formula-complete method notes in the 01_/03_ subfolders. "
-            "(ASTER alteration is automated in-pipeline since v0.7.0 — see the ASTER item above.)",
+            decision=Decision.PASS if self._sentinel_safe_processed else Decision.NA,
+            note=self._sentinel_safe_note
+            or "No supplementary L2A SAFE archive was selected; registered received derivatives remain available.",
+        )
+        report.add(
+            "KOMPSAT-2 exact bundle and sidecar inventory",
+            "Exact parent and sidecar identities are sealed before raster access.",
+            decision=Decision.PASS if self._kompsat_inventory_path is not None else Decision.NA,
+            note=self._kompsat_inventory_note or "Inventory was not attempted.",
+        )
+        report.add(
+            "KOMPSAT-2 RPC orthorectification and pansharpening",
+            "Local support processing follows METH-DISC-074; external egress/publication remain disabled.",
+            decision=Decision.PASS if self._kompsat_processing_path is not None else Decision.NA,
+            note=self._kompsat_processing_note or "Processing was not attempted.",
         )
         return report
 
@@ -994,13 +1301,12 @@ _SUPPORT_FOOTER = (
 )
 
 _SENTINEL_NOTE = (
-    "# Phase 02 — Sentinel-2 indices/masks/composites (orchestrated)\n\n"
-    "Our raw Sentinel inputs (#74/#77/#78) are *received composites / ratio stacks*, not the\n"
-    "individual bands B02–B12, so the pipeline only **reprojects them to EPSG:32647 and clips to\n"
-    "the licence boundary plus the adopted 1 km context** (METH-DISC-071; see\n"
-    "06_Export_EPSG32647). The products below need the band stack\n"
-    "(SNAP 13.0.0 Sen2Cor L1C→L2A, then resample B11/B12 to 10 m). Place results here / in\n"
-    "03_Masks / 05_Composites and log them.\n\n"
+    "# Phase 02 — Sentinel-2 indices/masks/composites\n\n"
+    "Registered inputs #74/#77/#78 remain integrity-bound received composites/ratios and are\n"
+    "reprojected and clipped to the adopted 1 km context. When Phase 00 also contains exactly one\n"
+    "supplementary L2A `.SAFE.zip`, the pipeline binds its SHA-256, reads the BOA scale/offsets,\n"
+    "aligns B02–B12 and SCL to a 10 m EPSG:32647 grid, clips to the same 1 km AOI, and writes the\n"
+    "products below as COGs. A missing SAFE source leaves the received-derivative branch intact.\n\n"
     "Formulas (EPSG:32647, 10 m, bilinear):\n"
     "- NDVI = (B08 − B04) / (B08 + B04); vegetation mask NDVI > 0.3\n"
     "- NDWI = (B03 − B08) / (B03 + B08); water mask NDWI > 0.2\n"
@@ -1044,15 +1350,17 @@ _ASTER_NOTE = (
 )
 
 _KOMPSAT_NOTE = (
-    "# Phase 02 — KOMPSAT-2 orthorectification & pan-sharpening (orchestrated)\n\n"
-    "KOMPSAT-2 needs RPC orthorectification **first** (PAN/MS .tif + .rpc + .eph + DEM) in\n"
-    "Global Mapper / ILWIS 3.6.8 / GDAL — a plain reproject of the un-orthorectified 1G\n"
-    "imagery is geometrically invalid, so the pipeline does **not** produce one. Band identity:\n"
+    "# Phase 02 — KOMPSAT-2 orthorectification & pan-sharpening\n\n"
+    "The pipeline hashes the five registered parent images and every `.txt`, `.rpc` and `.eph`\n"
+    "sidecar, validates the embedded RPC and L1G metadata, and uses the registered ALOS-PALSAR\n"
+    "DEM for RPC terrain correction onto the exact Phase 01 licence-plus-1-km AOI. Band identity:\n"
     "PN=PAN, M1=Green, M2=Blue, M3=NIR, M4=Red. Steps: ortho each band → EPSG:32647; MS band\n"
     "stack (B1=Blue,B2=Green,B3=Red,B4=NIR); true-colour (R/G/B = Red/Green/Blue); false-colour\n"
-    "(NIR/Red/Green); NDVI = (NIR − Red)/(NIR + Red); pan-sharpen (Brovey / Gram-Schmidt / IHS)\n"
-    "→ orthobasemap; digitise lineament/outcrop/access/disturbance. Keep .rpc/.eph/.txt with\n"
-    "their parent.\n" + _SUPPORT_FOOTER
+    "(NIR/Red/Green); NDVI = (NIR − Red)/(NIR + Red); Brovey RGB pan-sharpen → orthobasemap;\n"
+    "Canny/Hough lineament candidates → review GeoPackage. Outcrop, access-track and disturbance\n"
+    "layers stay empty until an evidence-based interpretation supplies them. The registered EULA\n"
+    "remains absent, so METH-DISC-074 permits local processing only and forbids provider egress or\n"
+    "external publication. Keep .rpc/.eph/.txt with their parent.\n" + _SUPPORT_FOOTER
 )
 
 _HYDRO_NOTE = (

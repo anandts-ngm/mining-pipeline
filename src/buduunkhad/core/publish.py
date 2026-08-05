@@ -59,6 +59,7 @@ from buduunkhad.core.run_artifacts import (
     sha256_file,
 )
 from buduunkhad.core.run_storage import (
+    POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS,
     RUN_LAYOUT_VERSION,
     SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
     RunLayout,
@@ -1180,7 +1181,9 @@ def _source_phase_execution_provenance(
 ) -> tuple[ExecutionMode, tuple[str, ...]]:
     """Resolve and validate execution-purpose provenance from a copied run manifest."""
 
-    if source_data.get("manifest_format_version") != "2.2.0":
+    if source_data.get("manifest_format_version") not in (
+        POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS
+    ):
         forbidden = {"execution_policy", "authorizations", "used_authorization_ids"}
         if forbidden & set(source_data) or {
             "execution_mode",

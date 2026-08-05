@@ -1152,3 +1152,57 @@ discrepancies:
     effective_version: methodology-contracts-v1.5.0
     implementation_evidence: Byte-bound pending_source_gate_rules execution policy; same-run and predecessor-run Phase 03-to-04 bridge tests; unchanged authoritative Phase 04 activation requirements.
     related_discrepancy_ids: [METH-DISC-003, METH-DISC-040, METH-DISC-041, METH-DISC-062, METH-DISC-067, METH-DISC-068]
+  - discrepancy_id: METH-DISC-073
+    subject: supplementary-sentinel-l2a-safe-adoption
+    compared_sources:
+      - methodology.master-v9
+      - METH-DISC-064
+      - config/input_register.csv
+      - config/methodology/phase02_processing.yaml
+    statement: The registered 79-input baseline contains received Sentinel derivatives, while one complete L2A SAFE archive was supplied later as an additional raw-band source.
+    operational_impact: Raw-band Sentinel composites, indices and masks can be produced without replacing registered inputs or fabricating their lineage.
+    status: resolved
+    resolution: Preserve all 79 registered identities and adopt only the exact Phase-00-checksummed supplementary SAFE path, SHA-256 and byte size in the Phase 02 processing contract; run the master's raw-band support branch alongside the existing received-derivative branch.
+    rationale: The later source is physically available and supplies every required L2A band plus SCL. Exact source binding prevents discovery or filename proximity from selecting a different archive.
+    approver: repository-owner directive
+    resolved_on: "2026-08-04"
+    effective_version: methodology-contracts-v1.5.0
+    implementation_evidence: config/methodology/phase02_processing.yaml supplementary SAFE profile; deterministic Sentinel processing record and focused tests.
+    related_discrepancy_ids: [METH-DISC-035, METH-DISC-064, METH-DISC-071]
+  - discrepancy_id: METH-DISC-074
+    subject: kompsat-local-processing-owner-direction
+    compared_sources:
+      - methodology.master-v9
+      - phase02.guide
+      - METH-DISC-049
+      - METH-DISC-056
+      - config/methodology/phase02_processing.yaml
+    statement: The exact KOMPSAT PAN/Green/Blue/NIR/Red L1G images, embedded RPC metadata and every registered TXT/RPC/EPH sidecar are present, while the registered EULA document remains absent.
+    operational_impact: The owner requires useful local Phase 02 KOMPSAT outputs now without allowing an unseen licence record to authorize external transfer.
+    status: resolved
+    resolution: Permit local exact-source RPC+ALOS-DEM orthorectification, BGRNIR stacking, RGB/false-colour, NDVI, Brovey pan-sharpening and machine-draft lineament packaging. Record the absent EULA truthfully and continue to prohibit provider egress and external publication of KOMPSAT source or derived bytes.
+    rationale: The directive enables deterministic functional outputs from a complete technical bundle without inventing the missing licence file or widening external-use authority. Interpretation products remain support evidence and empty interpretation classes are not fabricated.
+    approver: repository-owner directive
+    resolved_on: "2026-08-05"
+    effective_version: methodology-contracts-v1.5.0
+    implementation_evidence: config/methodology/phase02_processing.yaml KOMPSAT profile; exact inventory and processing records; focused processing and Phase 02 tests.
+    related_discrepancy_ids: [METH-DISC-029, METH-DISC-049, METH-DISC-056]
+  - discrepancy_id: METH-DISC-075
+    subject: repository-methodology-mirror-retention
+    compared_sources:
+      - methodology.master-v9
+      - methodology.master-v5-v6
+      - phase02.sentinel-qgis402-guide
+      - phase02.basemap-qgis402-guide
+      - phase02.dem-qgis402-guide
+      - config/methodology/authority.yaml
+    statement: The repository retained an obsolete v6 master mirror and expected three reference-only Phase 02 operator-guide mirrors even though none participates in active methodology authority.
+    operational_impact: Keeping superseded or reference-only binary mirrors beside adopted sources makes the canonical master less obvious and causes repository-policy failures after intentional operator-guide cleanup.
+    status: resolved
+    resolution: Keep the exact external identities, verification history and authority statuses for all four documents, but remove their repository-copy bindings and retain only the adopted v9 master as the local master mirror.
+    rationale: Removing a local mirror does not erase source history or promote another document. The v6 master remains obsolete and superseded by v9, while the three operator guides remain reference-only external evidence.
+    approver: repository-owner directive
+    resolved_on: "2026-08-05"
+    effective_version: methodology-contracts-v1.5.0
+    implementation_evidence: config/methodology/authority.yaml external-only historical records; repository policy catalog and methodology mirror tests.
+    related_discrepancy_ids: [METH-DISC-063, METH-DISC-064]

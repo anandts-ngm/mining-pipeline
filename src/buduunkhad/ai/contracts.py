@@ -422,7 +422,9 @@ class AIRequest(FrozenModel):
 
 class AIUsage(FrozenModel):
     input_tokens: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
+    reasoning_output_tokens: int = Field(default=0, ge=0)
     requests: int = Field(default=1, ge=0)
     cost_usd: Decimal = Field(default=Decimal("0"), ge=0)
 

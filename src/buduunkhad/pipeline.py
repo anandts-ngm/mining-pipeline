@@ -20,6 +20,7 @@ from typing import Any, cast
 from buduunkhad import __version__
 from buduunkhad.config import InputRecord, ProjectConfig, load_config, load_register
 from buduunkhad.core import paths, raw_guard, registers, winpath
+from buduunkhad.core.environment_identity import execution_environment
 from buduunkhad.core.evidence_manifest import (
     EvidenceAuthorityResolver,
     EvidenceManifestBinding,
@@ -45,6 +46,7 @@ from buduunkhad.core.qaqc import Decision
 from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.run_artifacts import RunOutputArtifact, has_symlink_component, sha256_file
 from buduunkhad.core.run_storage import (
+    POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS,
     RUN_LAYOUT_VERSION,
     RUN_MANIFEST_FORMAT_VERSION,
     SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS,
@@ -183,6 +185,7 @@ class RunManifest:
     manifest_format_version: str = RUN_MANIFEST_FORMAT_VERSION
     run_layout_version: str = RUN_LAYOUT_VERSION
     execution_identity: dict[str, str] = field(default_factory=dict)
+    execution_environment: dict[str, str] = field(default_factory=dict)
     evidence_manifests: list[EvidenceManifestBinding] = field(default_factory=list)
     source_phases: list[SourcePhaseBinding] = field(default_factory=list)
     execution_policy: ExecutionPolicyBinding | None = None
@@ -205,14 +208,18 @@ class RunManifest:
             "execution_identity": self.execution_identity,
             "phases": [p.as_dict() for p in self.phases],
         }
+        if self.manifest_format_version == "2.3.0":
+            if not self.execution_environment:
+                raise ValueError("run manifest v2.3 requires an execution-environment record")
+            value["execution_environment"] = self.execution_environment
         if self.manifest_format_version != "2.0.0":
             value["evidence_manifests"] = [
                 item.model_dump(mode="json") for item in self.evidence_manifests
             ]
             value["source_phases"] = [item.model_dump(mode="json") for item in self.source_phases]
-        if self.manifest_format_version == "2.2.0":
+        if self.manifest_format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS:
             if self.execution_policy is None:
-                raise ValueError("run manifest v2.2 requires an execution-policy binding")
+                raise ValueError("policy-bound run manifest requires an execution-policy binding")
             value["execution_policy"] = self.execution_policy.model_dump(mode="json")
             value["authorizations"] = [item.model_dump(mode="json") for item in self.authorizations]
             value["used_authorization_ids"] = self.used_authorization_ids
@@ -259,9 +266,7 @@ def select_phases(
 
 def validate_raw_inputs(register: list[InputRecord], raw_root: Path) -> list[str]:
     """Return the registered filenames that are absent from ``raw_root``."""
-    if not raw_root.exists():
-        return [r.filename for r in register]
-    present = {p.name for p in raw_guard.iter_files(raw_root)}
+    present = set(raw_guard.unique_basename_index(raw_root))
     return [r.filename for r in register if r.filename not in present]
 
 
@@ -517,11 +522,7 @@ def _code_identity() -> str:
 
 
 def _source_inventory_identity(config: ProjectConfig, register: list[InputRecord]) -> str:
-    index = (
-        {path.name: path for path in raw_guard.iter_files(config.raw_root)}
-        if config.raw_root.is_dir()
-        else {}
-    )
+    index = raw_guard.unique_basename_index(config.raw_root)
     records: list[dict[str, object]] = []
     for item in sorted(register, key=lambda value: value.no):
         path = index.get(item.filename)
@@ -542,6 +543,7 @@ def _execution_identity(
     config: ProjectConfig,
     register: list[InputRecord],
     *,
+    environment: Mapping[str, str],
     selected_phases: list[str],
     dry_run: bool,
     execution_policy: ExecutionPolicyBinding,
@@ -568,6 +570,7 @@ def _execution_identity(
         "project_configuration_sha256": _project_configuration_identity(config),
         "methodology_contract_sha256": _methodology_contract_identity(config),
         "code_version": _code_identity(),
+        "environment_sha256": _sha256_json(environment),
         "parameters_sha256": _sha256_json(parameters),
         "execution_policy_sha256": execution_policy.policy_sha256,
     }
@@ -584,6 +587,15 @@ def _execution_identity(
             [item.model_dump(mode="json") for item in source_phases]
         )
     return identity
+
+
+def _identity_for_manifest_version(
+    identity: Mapping[str, str], format_version: str
+) -> dict[str, str]:
+    value = dict(identity)
+    if format_version != "2.3.0":
+        value.pop("environment_sha256", None)
+    return value
 
 
 def _pending_source_mode(
@@ -721,11 +733,11 @@ def _phase_outcome_from_dict(
         isinstance(item, str) for item in raw_authorizations
     ):
         raise ResumeError("run manifest phase authorization inventory is malformed")
-    if format_version != "2.2.0" and (
+    if format_version not in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS and (
         raw_authorizations or "execution_mode" in value or "authorization_ids" in value
     ):
         raise ResumeError("legacy run phase cannot claim execution-policy authorization")
-    if format_version == "2.2.0" and tuple(
+    if format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS and tuple(
         sorted(set(cast(list[str], raw_authorizations)))
     ) != tuple(raw_authorizations):
         raise ResumeError("run manifest phase authorization inventory is inconsistent")
@@ -733,7 +745,7 @@ def _phase_outcome_from_dict(
         phase_id = str(value["phase_id"])
         execution_mode = (
             ExecutionMode(value["execution_mode"])
-            if format_version == "2.2.0"
+            if format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS
             else legacy_execution_mode(phase_id, dry_run=dry_run)
         )
         return PhaseOutcome(
@@ -783,6 +795,7 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
     raw_policy = data.get("execution_policy")
     raw_authorizations = data.get("authorizations", [])
     raw_used_authorizations = data.get("used_authorization_ids", [])
+    raw_environment = data.get("execution_environment", {})
     if (
         not isinstance(phases, list)
         or not all(isinstance(value, dict) for value in phases)
@@ -797,17 +810,28 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         or not isinstance(raw_authorizations, list)
         or not isinstance(raw_used_authorizations, list)
         or not all(isinstance(value, str) for value in raw_used_authorizations)
+        or not isinstance(raw_environment, dict)
+        or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in raw_environment.items()
+        )
     ):
         raise ResumeError("run manifest execution identity is malformed")
+    if format_version == "2.3.0" and not raw_environment:
+        raise ResumeError("run manifest execution environment is missing")
+    if format_version != "2.3.0" and raw_environment:
+        raise ResumeError("legacy run manifest cannot claim an execution environment")
     try:
         manifest_evidence = [EvidenceManifestBinding.model_validate(item) for item in raw_evidence]
         source_phases = [SourcePhaseBinding.model_validate(item) for item in raw_source_phases]
         execution_policy = (
-            ExecutionPolicyBinding.model_validate(raw_policy) if format_version == "2.2.0" else None
+            ExecutionPolicyBinding.model_validate(raw_policy)
+            if format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS
+            else None
         )
         authorizations = (
             [ExecutionAuthorization.model_validate(item) for item in raw_authorizations]
-            if format_version == "2.2.0"
+            if format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS
             else []
         )
     except ValueError as exc:
@@ -817,7 +841,7 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         raise ResumeError("run manifest predecessor phase bindings are duplicated or unordered")
     if format_version == "2.0.0" and (manifest_evidence or source_phases):
         raise ResumeError("run manifest v2.0 cannot claim source or accepted-evidence bindings")
-    if format_version != "2.2.0" and (
+    if format_version not in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS and (
         raw_policy is not None or raw_authorizations or raw_used_authorizations
     ):
         raise ResumeError("legacy run manifest cannot claim execution-policy authorization")
@@ -872,6 +896,7 @@ def _load_resume_manifest(layout: RunLayout) -> RunManifest:
         error=str(data.get("error", "")),
         manifest_format_version=cast(str, format_version),
         execution_identity=dict(identity),
+        execution_environment=cast(dict[str, str], raw_environment),
         evidence_manifests=manifest_evidence,
         source_phases=source_phases,
         execution_policy=execution_policy,
@@ -989,6 +1014,8 @@ def run_pipeline(
     validate_authorizations_for_run(authorizations, execution_policy)
     used_authorization_ids: set[str] = set()
     validate_execution_roots(config.raw_root, config.output_root, config.runs_root)
+    if not dry_run:
+        raw_guard.unique_basename_index(config.raw_root)
     required_sources = _required_external_phases(
         selected_ids,
         dry_run=dry_run,
@@ -1033,9 +1060,11 @@ def run_pipeline(
     with ProjectExecutionLock(config.runs_root, run_id):
         layout.initialize(resume=resume)
         logger = _setup_logger(layout, append=resume)
+        environment = execution_environment()
         identity = _execution_identity(
             config,
             register,
+            environment=environment,
             selected_phases=selected_ids,
             dry_run=dry_run,
             execution_policy=execution_policy,
@@ -1050,11 +1079,16 @@ def run_pipeline(
                 manifest.selected_phases != selected_ids
                 or manifest.dry_run != dry_run
                 or manifest.override
-                or manifest.execution_identity != identity
+                or manifest.execution_identity
+                != _identity_for_manifest_version(identity, manifest.manifest_format_version)
+                or (
+                    manifest.manifest_format_version == "2.3.0"
+                    and manifest.execution_environment != environment
+                )
                 or manifest.evidence_manifests != list(selected_evidence)
                 or manifest.source_phases != list(source_phase_bindings)
                 or (
-                    manifest.manifest_format_version == "2.2.0"
+                    manifest.manifest_format_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS
                     and (
                         manifest.execution_policy != execution_policy
                         or manifest.authorizations != list(authorizations)
@@ -1153,6 +1187,7 @@ def run_pipeline(
                 override=False,
                 selected_phases=selected_ids,
                 execution_identity=identity,
+                execution_environment=environment,
                 evidence_manifests=list(selected_evidence),
                 source_phases=list(source_phase_bindings),
                 execution_policy=execution_policy,
@@ -1189,11 +1224,7 @@ def run_pipeline(
 
             # Real runs require raw data + an unchanged read-only archive; dry runs do not.
             if not dry_run:
-                present_names = (
-                    {p.name for p in raw_guard.iter_files(config.raw_root)}
-                    if config.raw_root.exists()
-                    else set()
-                )
+                present_names = set(raw_guard.unique_basename_index(config.raw_root))
                 missing = [r.filename for r in register if r.filename not in present_names]
                 if missing:
                     acknowledged = _acknowledged_absent(config)

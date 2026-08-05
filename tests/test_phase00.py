@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from buduunkhad.core import paths
 from buduunkhad.core.gates import GateStatus
+from buduunkhad.core.raw_guard import RawIntegrityError
 from buduunkhad.core.registers import read_checksum_register_csv
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
@@ -105,3 +108,18 @@ def test_phase00_archives_unregistered_supplementary_files(raw_archive):
     assert archived.exists(), "supplementary (unregistered) raw file was not archived"
     assert archived.read_bytes() == supp.read_bytes()  # byte-identical copy
     assert phase._supplementary == 1
+
+
+def test_phase00_rejects_duplicate_raw_basenames(raw_archive):
+    config, register, raw_root = raw_archive
+    source = next(path for path in raw_root.rglob(register[0].filename))
+    duplicate = raw_root / "duplicate-group" / source.name
+    duplicate.parent.mkdir()
+    duplicate.write_bytes(source.read_bytes())
+
+    ctx = _ctx(config, register)
+    phase = Phase00Archive()
+    phase.prepare(ctx)
+
+    with pytest.raises(RawIntegrityError, match="duplicate basenames"):
+        phase.run(ctx)

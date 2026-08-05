@@ -44,16 +44,16 @@ boundaries:
     ai_prohibited:
       - Changing existing calculations or thresholds without an approved source and methodology record.
     blocking_dependencies:
-      - KOMPSAT remains excluded under METH-READY-002; ASTER HDF remains dataset-blocked under METH-READY-003 while other Phase 02 products may proceed.
+      - KOMPSAT local deterministic processing is permitted by METH-DISC-074, but METH-READY-002 still blocks provider egress and external publication; ASTER HDF remains dataset-blocked under METH-READY-003 while other Phase 02 products may proceed.
       - Lineament and outcrop digitizing rules are expert inputs.
     status: implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "03"
     automation_category: desktop-orchestrated
     deterministic_authority:
-      - Scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, exact manifest-resolved support-evidence ingest, and the opt-in AI-draft review packaging and promotion.
+      - Exact Phase 00 source traceability, scaffold, registers, evidence-GeoPackage assembly, CMCS buffers, occurrence ingest, exact manifest-resolved support-evidence ingest, and the opt-in AI-draft review packaging and promotion.
       - Evidence roles must own their exact Phase 03 target layers, and catalog admission plus predecessor-run identities remain bound into the consuming run.
-      - Source-specific legend/feature request preparation, non-destructive overlap review, structured 03A evidence/critique records and exact scientific-handoff resolution.
+      - Source-specific and batch legend/feature execution, non-destructive overlap review, content-aware QA/QC, the exact eight-criterion 100-point 03A evidence/critique records and scientific-handoff resolution.
     human_review_boundary:
       - Digitizing, georeferencing acceptance, the 03A deposit-model matrix, and every handoff review decision.
     ai_permitted:

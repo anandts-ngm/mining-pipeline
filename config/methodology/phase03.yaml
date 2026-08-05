@@ -1,9 +1,13 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "03"
 requirements:
   - requirement_id: P03-SCAFFOLD-001
     statement: The adopted twelve-folder scaffold, Phase 03 labels, feature-ID namespaces and fourteen-column legacy evidence schema remain the deterministic structural contract.
     source_refs: [repository.methodology-contracts, phase03.guide, METH-DISC-022, METH-DISC-023, METH-DISC-024]
+    status: adopted
+  - requirement_id: P03-SOURCE-TRACEABILITY-001
+    statement: Every registered Phase 03 source is copied by Phase 00 and bound to its exact input number, source identity, relative path, byte size and SHA-256 before Phase 03 processing.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-001]
     status: adopted
   - requirement_id: P03-CONTEXT-001
     statement: CMCS context uses the adopted 5 km, 10 km, 20 km and 25 km rings; context hits remain support evidence rather than mineralization proof.
@@ -18,11 +22,11 @@ requirements:
     source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-031, METH-DISC-040, METH-DISC-062, METH-DISC-067]
     status: adopted
   - requirement_id: P03-AI-DRAFT-001
-    statement: AI-first digitization produces draft geometry in source-image pixel coordinates.
+    statement: AI-first digitization produces draft geometry in source-image pixel coordinates, and each configured historical source has its own exact request, response and review identity.
     source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-DETERMINISTIC-VALIDATION-001
-    statement: CRS, registration, geometry, topology, attribution and provenance validation remain deterministic.
+    statement: CRS, registration, geometry, topology, attribution, overlap and provenance validation remain deterministic.
     source_refs: [repository.methodology-contracts, phase03.guide]
     status: adopted
   - requirement_id: P03-AI-HUMAN-HANDOFF-001
@@ -33,3 +37,146 @@ requirements:
     statement: Phase 03 may ingest external support layers only through a selected immutable evidence manifest and catalog admission event that resolve the exact source authority, run, artifact bytes, layer, canonical role-to-target ownership, lifecycle and Phase 03 target; directory proximity and filenames are discovery hints only.
     source_refs: [repository.methodology-contracts, methodology.master-v9]
     status: adopted
+  - requirement_id: P03-DEPOSIT-MODEL-001
+    statement: The preliminary 03A deposit-model assessment uses the adopted eight-criterion 100-point matrix, keeps supporting, contradicting and missing evidence explicit, prevents double-counting, separates AI proposal from critique, and reserves the final decision for the project geologist.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase03.guide, METH-DISC-023, METH-DISC-062]
+    status: adopted
+implementation_coverage:
+  - coverage_id: P03-COV-SOURCE-SCAFFOLD-001
+    requirement_ids: [P03-SCAFFOLD-001, P03-SOURCE-TRACEABILITY-001, P03-CONTEXT-001]
+    master_refs:
+      - methodology.master-v9::03.Phase 3.Required input and workflow structure
+      - methodology.master-v9::03.Phase 3.CMCS and MRPAM occurrence context
+    guide_refs:
+      - phase03.guide::3.Phase 3 folder structure
+      - phase03.guide::7.CMCS occurrence context
+    resolution_refs: [METH-DISC-001, METH-DISC-018, METH-DISC-022, METH-DISC-024]
+    adopted_behavior: Build the twelve-folder Phase 03 workspace, bind all 28 registered Phase 03 source working copies to their exact Phase 00 identities, generate 5/10/20/25 km context rings, and normalize the registered occurrence source without treating context as proof.
+    implementation_refs:
+      - src/buduunkhad/phases/phase03_geology_synthesis.py::Phase03GeologySynthesis.run
+      - src/buduunkhad/core/phase03_sources.py::create_phase03_source_traceability
+    output_refs:
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/12_Phase3_QAQC_and_Handover/XV-023222_Buduunkhad_Phase3_Source_Traceability.json
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/02_CMCS_MRPAM_5_10_20_25km/CMCS_context_buffers
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/07_Occurrence_Register_and_Coordinate_QAQC/XV-023222_Buduunkhad_Occurrence_Register.xlsx
+    qaqc_checks:
+      - The traceability record contains exactly inputs 1-8 and 53-72 and revalidates every copied byte.
+      - Context rings use only the adopted distances and remain labelled support evidence.
+      - Coordinate mode, source CRS evidence, reprojection and rejected rows are recorded truthfully.
+    test_refs:
+      - tests/test_phase03_synthesis.py::test_phase03_real_run_binds_exact_phase00_source_set
+      - tests/test_phase03_synthesis.py::test_phase03_cmcs_buffer_four_rings
+      - tests/test_phase03_synthesis.py::test_phase03_occurrence_register_populated_from_68
+    status: implemented
+  - coverage_id: P03-COV-GEOREFERENCE-001
+    requirement_ids: [P03-GEOREF-OWNERSHIP-001]
+    master_refs:
+      - methodology.master-v9::03.Phase 3.Georeference historical geology and metallogenic sources
+    guide_refs:
+      - phase03.guide::5.Georeferencing and spatial acceptance
+    resolution_refs: [METH-DISC-028, METH-DISC-050, METH-DISC-055]
+    adopted_behavior: Measure source and derivative identities, CRS, GCPs, transformations and residuals in a typed record, require separate qualified geospatial and geological reviews, and resolve acceptance only when both exact reviews accept the same record.
+    implementation_refs:
+      - src/buduunkhad/core/georeference.py::create_georeference_record
+      - src/buduunkhad/core/georeference.py::resolve_georeference_acceptance
+    output_refs:
+      - Phase03_Georeference_Record.json
+      - Phase03_Georeference_Review.json
+      - Phase03_Georeference_Acceptance.json
+    qaqc_checks:
+      - Source and derivative mutation invalidate the record or acceptance.
+      - Missing CRS, GCPs or residual evidence remains incomplete.
+      - No threshold or review decision is invented by code.
+    test_refs:
+      - tests/test_georeference.py::test_georeference_record_calculates_residuals_without_approving
+      - tests/test_georeference.py::test_two_exact_accepted_roles_resolve_georeference
+      - tests/test_georeference.py::test_missing_crs_or_gcps_remains_incomplete
+    status: implemented-with-review
+  - coverage_id: P03-COV-EVIDENCE-PACKAGE-001
+    requirement_ids: [P03-PRELIMINARY-EVIDENCE-001, P03-EVIDENCE-AUTHORITY-001]
+    master_refs:
+      - methodology.master-v9::03.Phase 3.Geological and metallogenic evidence synthesis
+      - methodology.master-v9::03.Phase 3.QA/QC and decision gate
+    guide_refs:
+      - phase03.guide::8.Consolidated evidence package
+      - phase03.guide::12.Phase 3 QA/QC and handover
+    resolution_refs: [METH-DISC-062, METH-DISC-067]
+    adopted_behavior: Create the seventeen-layer schema, ingest only exact manifest-authorized evidence into canonical target layers, retain valid alteration and geochemical evidence as standalone support when no canonical layer exists, and report content availability separately from schema validity.
+    implementation_refs:
+      - src/buduunkhad/phases/phase03_geology_synthesis.py::Phase03GeologySynthesis._ingest_human_layers
+      - src/buduunkhad/phases/phase03_geology_synthesis.py::Phase03GeologySynthesis.qaqc
+    output_refs:
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/09_Consolidated_Evidence_Package/XV023222_Buduunkhad_Phase3_Consolidated_Evidence_EPSG32647_v01.gpkg
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/11_Evidence_Scoring_and_DataGap/XV-023222_Buduunkhad_Phase3_Selected_Support_Evidence_Availability.xlsx
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/11_Evidence_Scoring_and_DataGap/XV-023222_Buduunkhad_Phase3_DataGap_and_Validation_Priority.xlsx
+    qaqc_checks:
+      - Empty schema layers do not satisfy geological content requirements.
+      - Renaming, copying or placing a layer near Phase 03 does not grant authority.
+      - Alteration and geochemistry availability are determined from selected evidence identities rather than filenames.
+    test_refs:
+      - tests/test_phase03_synthesis.py::test_phase03_ingests_only_manifest_selected_human_layer
+      - tests/test_phase03_synthesis.py::test_phase03_records_standalone_alteration_and_geochemical_evidence
+      - tests/test_phase03_synthesis.py::test_phase03_never_discovers_nearby_ai_handoff_evidence
+    status: implemented-with-review
+  - coverage_id: P03-COV-AI-EXTRACTION-001
+    requirement_ids: [P03-AI-DRAFT-001, P03-DETERMINISTIC-VALIDATION-001, P03-AI-HUMAN-HANDOFF-001]
+    master_refs:
+      - methodology.master-v9::03.Phase 3.Historical-map interpretation and digitization
+      - methodology.master-v9::03.Phase 3.Human review and acceptance
+    guide_refs:
+      - phase03.guide::6.Source-specific interpretation workflow
+      - phase03.guide::12.Phase 3 QA/QC and handover
+    resolution_refs: [METH-DISC-055, METH-DISC-062, METH-DISC-067]
+    adopted_behavior: For each explicitly configured and approved source, prepare exact legend and feature packages, obtain strict structured proposals, transform pixel geometry deterministically, detect overlap duplicates and conflicts without silently stitching, and keep each source in a distinct immutable AI review attempt.
+    implementation_refs:
+      - src/buduunkhad/geospatial_ai/snapshots.py::import_phase03_snapshot_source
+      - src/buduunkhad/geospatial_ai/snapshots.py::verify_phase03_snapshot_source
+      - src/buduunkhad/geospatial_ai/phase03_source_workflow.py::prepare_phase03_source_workflow
+      - src/buduunkhad/geospatial_ai/ai_first.py::run_phase03_ai_first_batch
+    output_refs:
+      - snapshots/phase03-imported-sources/<source-id>/snapshot-import.json
+      - work/runs/<ai-run-id>/ai/phases/03/phase03-ai-first-manifest.json
+      - work/runs/<batch-run-id>/ai/phases/03/phase03-ai-batch-manifest.json
+      - work/runs/<ai-run-id>/ai/phases/03/review-package/review-package.json
+      - work/runs/<ai-run-id>/ai/phases/03/integrated-review.qgz
+    qaqc_checks:
+      - Aggregate request count and inspected cost are checked before the first provider call.
+      - Imported raster bytes, CRS, transform and dimensions are revalidated before package preparation.
+      - Multi-source main runs require explicit source selection and never infer whole-catalog egress.
+      - Every source session retains exact source, tile, prompt, schema, request, response and output identities.
+      - Ambiguous overlap remains a review finding and cannot silently modify or promote geometry.
+    test_refs:
+      - tests/test_phase03_source_workflow.py::test_source_workflow_prepares_exact_legend_and_feature_packages
+      - tests/test_phase03_source_workflow.py::test_overlap_classification_is_cross_tile_and_never_changes_geometry
+      - tests/test_ai_first.py::test_ai_first_phase03_batch_keeps_each_source_in_a_separate_attempt
+      - tests/test_snapshot_import.py::test_georeferenced_source_import_is_atomic_idempotent_and_revalidated
+    status: implemented-with-review
+  - coverage_id: P03-COV-DEPOSIT-HANDOFF-001
+    requirement_ids: [P03-DEPOSIT-MODEL-001]
+    master_refs:
+      - methodology.master-v9::03A.Preliminary deposit model
+      - methodology.master-v9::03.Phase 3.Decision gate
+    guide_refs:
+      - phase03.guide::10.Preliminary deposit model 03A
+      - phase03.guide::12.Phase 3 QA/QC and handover
+    resolution_refs: [METH-DISC-023, METH-DISC-062, METH-DISC-067]
+    adopted_behavior: Validate the exact eight-criterion 100-point 03A rubric, bind every positive proposal to accepted evidence, keep critique and geologist review separate, and resolve scientific handoff only against accepted boundary, georeferences, reviewed required-role evidence and the exact reviewed assessment.
+    implementation_refs:
+      - src/buduunkhad/core/phase03_science.py::create_deposit_model_assessment
+      - src/buduunkhad/core/phase03_science.py::resolve_phase03_scientific_handoff
+      - src/buduunkhad/core/phase03_science.py::write_deposit_model_assessment_workbook
+    output_refs:
+      - Phase03_Deposit_Model_Assessment.json
+      - Phase03_Deposit_Model_Assessment.xlsx
+      - Phase03_Deposit_Model_Critique.json
+      - Phase03_Deposit_Model_Review.json
+      - Phase03_Scientific_Handoff.json
+    qaqc_checks:
+      - The rubric contains all eight adopted criteria in order and totals exactly 100 possible points.
+      - Missing evidence scores zero, positive points cite accepted evidence, and correlated evidence cannot be double-counted.
+      - Only an accepted project-geologist decision and all exact prerequisite records can resolve the handoff.
+    test_refs:
+      - tests/test_phase03_science.py::test_model_chain_separates_proposal_critique_and_geologist_decision
+      - tests/test_phase03_science.py::test_model_assessment_requires_exact_eight_criterion_rubric
+      - tests/test_phase03_science.py::test_phase03_handoff_resolves_exact_reviews_and_required_roles
+    status: implemented-with-review

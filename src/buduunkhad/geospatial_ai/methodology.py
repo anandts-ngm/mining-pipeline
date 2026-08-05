@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class MethodologyError(ValueError):
@@ -21,6 +21,7 @@ HISTORICAL_UNKNOWN = "historical-unknown"
 DiscrepancyStatus = Literal["unresolved", "resolved", "superseded", "withdrawn"]
 AuthorityStatus = Literal["adopted", "reference-only", "pending-review", "obsolete"]
 RequirementStatus = Literal["adopted", "adopted-with-unresolved-discrepancy"]
+CoverageStatus = Literal["implemented", "implemented-with-review", "partially-implemented"]
 AutomationStatus = Literal[
     "implemented",
     "partially-implemented",
@@ -133,18 +134,145 @@ class MethodologyRequirement(BaseModel):
         return self
 
 
+class MethodologyCoverage(BaseModel):
+    """Trace one adopted requirement set from source text to tested outputs."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    coverage_id: str = Field(pattern=r"^P0[0-5]-COV-[A-Z0-9-]+-\d{3}$")
+    requirement_ids: tuple[str, ...] = Field(min_length=1)
+    master_refs: tuple[str, ...] = Field(min_length=1)
+    guide_refs: tuple[str, ...] = ()
+    resolution_refs: tuple[str, ...] = ()
+    adopted_behavior: str = Field(min_length=1)
+    implementation_refs: tuple[str, ...] = Field(min_length=1)
+    output_refs: tuple[str, ...] = Field(min_length=1)
+    qaqc_checks: tuple[str, ...] = Field(min_length=1)
+    test_refs: tuple[str, ...] = Field(min_length=1)
+    status: CoverageStatus
+    remaining_work: tuple[str, ...] = ()
+
+    @field_validator(
+        "requirement_ids",
+        "master_refs",
+        "guide_refs",
+        "resolution_refs",
+        "implementation_refs",
+        "output_refs",
+        "qaqc_checks",
+        "test_refs",
+    )
+    @classmethod
+    def _items_are_unique_and_nonblank(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.strip() for item in value):
+            raise ValueError("methodology coverage entries must not be blank")
+        if len(set(value)) != len(value):
+            raise ValueError("methodology coverage entries must be unique")
+        return value
+
+    @field_validator("master_refs")
+    @classmethod
+    def _master_references_are_exact(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.startswith("methodology.master-v9::") for item in value):
+            raise ValueError("coverage master references must use methodology.master-v9 sections")
+        return value
+
+    @field_validator("guide_refs")
+    @classmethod
+    def _guide_references_are_section_bound(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any("::" not in item for item in value):
+            raise ValueError("coverage guide references must bind a source ID and section")
+        return value
+
+    @field_validator("resolution_refs")
+    @classmethod
+    def _resolutions_are_discrepancy_records(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not item.startswith("METH-DISC-") for item in value):
+            raise ValueError("coverage resolution references must be discrepancy IDs")
+        return value
+
+    @field_validator("implementation_refs")
+    @classmethod
+    def _implementation_references_are_canonical(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return cls._canonical_repository_references(value, required_root="src")
+
+    @field_validator("test_refs")
+    @classmethod
+    def _test_references_are_canonical(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return cls._canonical_repository_references(value, required_root="tests")
+
+    @staticmethod
+    def _canonical_repository_references(
+        value: tuple[str, ...], *, required_root: str
+    ) -> tuple[str, ...]:
+        for item in value:
+            path_text, separator, symbol = item.partition("::")
+            path = PurePosixPath(path_text)
+            if (
+                not separator
+                or not symbol
+                or path.is_absolute()
+                or ".." in path.parts
+                or not path.parts
+                or path.parts[0] != required_root
+                or path.as_posix() != path_text
+            ):
+                raise ValueError(
+                    f"coverage reference must be a canonical {required_root} path and symbol: "
+                    f"{item}"
+                )
+        return value
+
+    @model_validator(mode="after")
+    def _status_and_remaining_work_agree(self) -> MethodologyCoverage:
+        if self.status == "partially-implemented" and not self.remaining_work:
+            raise ValueError("partial coverage requires explicit remaining work")
+        if self.status == "implemented" and self.remaining_work:
+            raise ValueError("fully implemented coverage cannot carry remaining work")
+        return self
+
+
 class PhaseMethodology(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.0.0"]
+    format_version: Literal["1.0.0", "1.1.0"]
     phase_id: str = Field(pattern=r"^0[0-5]$")
     requirements: tuple[MethodologyRequirement, ...]
+    implementation_coverage: tuple[MethodologyCoverage, ...] = ()
 
     @model_validator(mode="after")
     def _unique_requirement_ids(self) -> PhaseMethodology:
         identities = tuple(item.requirement_id for item in self.requirements)
         if len(set(identities)) != len(identities):
             raise ValueError("phase methodology contains duplicate stable requirement IDs")
+        coverage_ids = tuple(item.coverage_id for item in self.implementation_coverage)
+        if len(set(coverage_ids)) != len(coverage_ids):
+            raise ValueError("phase methodology contains duplicate coverage IDs")
+        if self.phase_id in {"00", "01", "02", "03"}:
+            if self.format_version != "1.1.0" or not self.implementation_coverage:
+                raise ValueError("Phase 00-03 methodology requires implementation coverage v1.1.0")
+            referenced = {
+                requirement_id
+                for item in self.implementation_coverage
+                for requirement_id in item.requirement_ids
+            }
+            unknown = referenced - set(identities)
+            if unknown:
+                raise ValueError(
+                    f"implementation coverage references unknown requirements: {sorted(unknown)}"
+                )
+            missing = set(identities) - referenced
+            if missing:
+                raise ValueError(
+                    f"implementation coverage omits adopted requirements: {sorted(missing)}"
+                )
+            prefix = f"P{self.phase_id}-COV-"
+            if any(
+                not item.coverage_id.startswith(prefix) for item in self.implementation_coverage
+            ):
+                raise ValueError("coverage ID does not match the phase")
+        elif self.format_version != "1.0.0" or self.implementation_coverage:
+            raise ValueError("Phase 04-05 methodology remains at format v1.0.0")
         return self
 
 
@@ -490,6 +618,64 @@ class SentinelProcessingProfile(BaseModel):
         return self
 
 
+class SupplementarySentinelSafeProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile_id: Literal["sentinel-l2a-safe-10m-support-v1"]
+    archive_relative_path: str
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_size_bytes: int = Field(ge=1)
+    operation: Literal["l2a-safe-align-clip-derive"]
+    target_resolution_m: float = Field(gt=0)
+    clip_buffer_m: Literal[1000]
+    rationale: str
+
+    @field_validator("archive_relative_path")
+    @classmethod
+    def _portable_phase00_path(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if not value or "\\" in value or path.is_absolute() or ".." in path.parts:
+            raise ValueError("supplementary SAFE path must be canonical and relative")
+        if path.as_posix() != value or not value.endswith(".SAFE.zip"):
+            raise ValueError("supplementary SAFE path must be a canonical .SAFE.zip path")
+        return value
+
+    @field_validator("target_resolution_m")
+    @classmethod
+    def _exact_resolution(cls, value: float) -> float:
+        if value != 10.0:
+            raise ValueError("supplementary Sentinel SAFE target resolution must be 10 metres")
+        return value
+
+
+class KompsatProcessingProfile(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    profile_id: Literal["kompsat2-rpc-dem-local-support-v1"]
+    input_numbers: tuple[Literal[24, 28, 32, 36, 40], ...]
+    rpc_dem_input_number: Literal[12]
+    operation: Literal["rpc-dem-ortho-stack-derive"]
+    target_epsg: Literal[32647]
+    clip_buffer_m: Literal[1000]
+    pan_resolution_m: float = Field(gt=0)
+    multispectral_resolution_m: float = Field(gt=0)
+    multispectral_band_order: tuple[Literal["BLUE", "GREEN", "RED", "NIR"], ...]
+    pansharpen_method: Literal["Brovey-RGB"]
+    external_egress_allowed: Literal[False]
+    external_publication_allowed: Literal[False]
+    rationale: str
+
+    @model_validator(mode="after")
+    def _exact_bundle_and_grid(self) -> KompsatProcessingProfile:
+        if self.input_numbers != (24, 28, 32, 36, 40):
+            raise ValueError("KOMPSAT profile must bind PAN/GREEN/BLUE/NIR/RED inputs")
+        if self.multispectral_band_order != ("BLUE", "GREEN", "RED", "NIR"):
+            raise ValueError("KOMPSAT profile band order must be BLUE/GREEN/RED/NIR")
+        if self.pan_resolution_m != 1.0 or self.multispectral_resolution_m != 4.0:
+            raise ValueError("KOMPSAT profile must retain the source 1 m PAN and 4 m MS grids")
+        return self
+
+
 class DemProcessingProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -525,13 +711,24 @@ class DemProcessingProfile(BaseModel):
 class Phase02ProcessingContract(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    format_version: Literal["1.1.0"]
+    format_version: Literal["1.3.0"]
     phase_id: Literal["02"]
     authority_source: Literal["methodology.master-v9"]
-    decision_sources: tuple[Literal["METH-DISC-052", "METH-DISC-053", "METH-DISC-071"], ...]
+    decision_sources: tuple[
+        Literal[
+            "METH-DISC-052",
+            "METH-DISC-053",
+            "METH-DISC-071",
+            "METH-DISC-073",
+            "METH-DISC-074",
+        ],
+        ...,
+    ]
     policy_status: Literal["adopted-support-evidence-contract"]
     scientific_use: Literal["support-evidence-only"]
     sentinel_profile: SentinelProcessingProfile
+    supplementary_sentinel_safe: SupplementarySentinelSafeProfile
+    kompsat_profile: KompsatProcessingProfile
     basemap_assets: tuple[BasemapAssetPolicy, ...]
     dem_profiles: tuple[DemProcessingProfile, ...]
     parameter_policy: tuple[str, ...] = Field(min_length=1)
@@ -542,7 +739,13 @@ class Phase02ProcessingContract(BaseModel):
             raise ValueError("Phase 02 basemap contract must cover inputs 75 and 76 in order")
         if tuple(item.input_number for item in self.dem_profiles) != (12, 9):
             raise ValueError("Phase 02 DEM contract must cover primary input 12 then input 9")
-        if self.decision_sources != ("METH-DISC-052", "METH-DISC-053", "METH-DISC-071"):
+        if self.decision_sources != (
+            "METH-DISC-052",
+            "METH-DISC-053",
+            "METH-DISC-071",
+            "METH-DISC-073",
+            "METH-DISC-074",
+        ):
             raise ValueError("Phase 02 processing decisions must be exact and ordered")
         return self
 
@@ -798,6 +1001,38 @@ def _validate_phase_source_refs(
             raise ValueError(
                 f"{requirement.requirement_id} references unknown methodology sources: "
                 f"{sorted(unknown)}"
+            )
+    discrepancy_by_id = {item.discrepancy_id: item for item in discrepancies.discrepancies}
+    source_by_id = {item.source_id: item for item in authority.sources}
+    for coverage in phase.implementation_coverage:
+        detailed_source_ids = {
+            item.partition("::")[0] for item in (*coverage.master_refs, *coverage.guide_refs)
+        }
+        unknown_sources = detailed_source_ids - set(source_by_id)
+        if unknown_sources:
+            raise ValueError(
+                f"{coverage.coverage_id} references unknown detailed sources: "
+                f"{sorted(unknown_sources)}"
+            )
+        unusable_sources = {
+            identity
+            for identity in detailed_source_ids
+            if source_by_id[identity].authority_status in {"obsolete", "pending-review"}
+        }
+        if unusable_sources:
+            raise ValueError(
+                f"{coverage.coverage_id} uses non-adoptable detailed sources: "
+                f"{sorted(unusable_sources)}"
+            )
+        invalid_resolutions = {
+            identity
+            for identity in coverage.resolution_refs
+            if identity not in discrepancy_by_id or discrepancy_by_id[identity].status != "resolved"
+        }
+        if invalid_resolutions:
+            raise ValueError(
+                f"{coverage.coverage_id} references unresolved decisions: "
+                f"{sorted(invalid_resolutions)}"
             )
 
 

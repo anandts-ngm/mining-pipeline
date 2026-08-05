@@ -28,16 +28,11 @@ def test_repository_env_loads_key_without_overriding_process_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(tmp_path)
-    (tmp_path / ".env").write_text(
-        f"{_OPENAI_KEY_NAME}={_FILE_KEY}\nBUDUUNKHAD_AI_EGRESS_APPROVER='Anand Tsogtjargal'\n",
-        encoding="utf-8",
-    )
+    (tmp_path / ".env").write_text(f"{_OPENAI_KEY_NAME}={_FILE_KEY}\n", encoding="utf-8")
     monkeypatch.delenv(_OPENAI_KEY_NAME, raising=False)
-    monkeypatch.delenv("BUDUUNKHAD_AI_EGRESS_APPROVER", raising=False)
 
     assert load_repository_env(config) == tmp_path / ".env"
     assert os.environ[_OPENAI_KEY_NAME] == _FILE_KEY
-    assert os.environ["BUDUUNKHAD_AI_EGRESS_APPROVER"] == "Anand Tsogtjargal"
 
     monkeypatch.setenv(_OPENAI_KEY_NAME, _PROCESS_KEY)
     load_repository_env(config)
@@ -57,4 +52,15 @@ def test_repository_env_rejects_malformed_values(tmp_path: Path, content: str) -
     config = _config(tmp_path)
     (tmp_path / ".env").write_text(content, encoding="utf-8")
     with pytest.raises(LocalEnvError):
+        load_repository_env(config)
+
+
+def test_repository_env_rejects_noncredential_variables(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    (tmp_path / ".env").write_text(
+        "BUDUUNKHAD_WORK_ROOT=C:/redirected\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LocalEnvError, match="only provider credentials"):
         load_repository_env(config)

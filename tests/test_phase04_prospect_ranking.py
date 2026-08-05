@@ -225,6 +225,46 @@ def test_make_grid_and_dissolve(project):
     assert "cluster_id" in merged.columns
 
 
+def test_phase04_refuses_unbound_03a_workbook(project):
+    config, register, _tmp = project
+    ctx = _ctx(config, register)
+    matrix = (
+        ctx.phase_dir("03")
+        / "10_Preliminary_Deposit_Model_03A"
+        / "deposit_model_candidate_score_matrix.xlsx"
+    )
+    matrix.parent.mkdir(parents=True)
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(["criterion", "max_points", "porphyry"])
+    sheet.append(["Total", 100, 95])
+    workbook.save(matrix)
+    phase = Phase04ProspectRanking()
+
+    phase._load_model_fit(ctx)
+
+    assert phase._model_fit["available"] is False
+    assert any("filename does not establish" in note for note in phase._notes)
+
+
+def test_phase04_fails_loudly_on_an_unreadable_evidence_layer(project, monkeypatch):
+    config, register, _tmp = project
+    phase = Phase04ProspectRanking()
+    gpkg = config.output_root / "evidence.gpkg"
+    gpkg.parent.mkdir(parents=True, exist_ok=True)
+    gpkg.write_bytes(b"synthetic")
+    monkeypatch.setattr(vector_io, "list_gpkg_layers", lambda _path: ["broken_layer"])
+    monkeypatch.setattr(
+        vector_io,
+        "read_layer",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("synthetic read failure")),
+    )
+
+    with pytest.raises(RuntimeError, match="broken_layer.*cannot be read"):
+        phase._load_evidence(gpkg)
+
+
 # --------------------------------------------------------------------------- #
 # dry-run
 # --------------------------------------------------------------------------- #

@@ -1,5 +1,141 @@
-format_version: 1.0.0
+format_version: 1.3.0
+authority_status: planning-only
+runtime_effect: none
 items:
+  - item_id: ENG-BACKLOG-009
+    title: Complete real Phase 03 scientific evidence and handoff
+    status: implemented-workflow-real-sources-prepared-awaiting-ai-and-review
+    priority: phase03-functional-completeness
+    objective: >-
+      Run the master-governed Phase 03 workflow across every approved historical source, obtain
+      reviewed geological evidence and complete the 03A deposit-model decision needed for an
+      authoritative Phase 03 handoff.
+    implemented_work:
+      - Bind the exact 28 registered Phase 03 inputs to their Phase 00 working-copy hashes and
+        emit source traceability in the sealed handover directory.
+      - Report actual populated geological domains separately from the seventeen-layer schema
+        and record selected alteration and geochemical support evidence without filename-based
+        inference.
+      - Support multiple explicitly configured map sources while preserving a separate immutable
+        AI attempt, ledger, review package and integrated QGIS project for each source.
+      - Import exact local georeferenced rasters through source-specific immutable snapshot
+        authorities that record bytes, CRS and dimensions and reject CRS-less sources.
+      - Configure six real Buduunkhad Phase 03 map sources and require explicit source selection
+        before a multi-source live run can egress any bytes.
+      - Admit nine exact local/Phase-02 support manifests and merge compatible contributions into
+        the same canonical layer with collision-free deterministic feature IDs.
+      - Check aggregate request count and inspected cost before the first call in a multi-source
+        batch, and keep ambiguous overlap findings non-destructive.
+      - Refuse any live request whose exact deterministic tile plan or prepared raw payload exceeds
+        configured per-request image or byte limits; the current pilot profile permits at most 24
+        images and 100,000,000 prepared bytes per request.
+      - Validate and render the exact eight-criterion, 100-point 03A matrix with evidence-bound
+        positive scores, explicit gaps, separate critique and project-geologist review.
+      - Retain the existing exact georeference acceptance and scientific-handoff resolvers.
+    remaining_work:
+      - Add remaining historical sources only when their exact georeferenced rasters and usable
+        legend regions become available; the currently prepared six-source catalog is operational.
+      - Use a bounded crop or a separately reviewed batching-and-reconciliation workflow for the
+        four configured maps whose current full-map tile plans exceed the 24-image live limit.
+      - Run the source packages, review or edit every proposal in QGIS, and admit only accepted
+        geology, structure, occurrence and alteration evidence through the existing manifest.
+      - Supply the real independent georeference reviews and complete the 03A assessment,
+        critique and project-geologist decision.
+      - Resolve the final Phase 03 handoff against the exact accepted boundary, georeferences,
+        evidence manifests and 03A records.
+    acceptance:
+      - Every Phase 03 conclusion resolves to exact source and accepted-evidence identities.
+      - Schema-only or empty outputs cannot satisfy scientific content checks.
+      - AI output never promotes itself or silently stitches ambiguous geometry.
+      - The scientific handoff passes only after every exact human decision exists.
+    non_goals:
+      - Add Prefect, PostGIS, STAC, a dashboard or a new agent framework before real Phase 03
+        outputs prove those services are needed.
+      - Change the Phase 04 legacy comparator or fabricate missing scientific acceptance.
+  - item_id: ENG-BACKLOG-008
+    title: Complete Phase 02 sensor processing and handover outputs
+    status: implemented-local-handover-external-kompsat-blocked
+    priority: phase02-functional-completeness
+    objective: >-
+      Produce every reproducible Phase 02 support product justified by exact available source
+      bytes, while keeping historically undefined composites and unlicensed external KOMPSAT
+      distribution out of executable behavior.
+    implemented_work:
+      - Bind the exact supplementary Sentinel-2 L2A SAFE path, SHA-256 and size without changing
+        the 79 registered raw identities.
+      - Apply MTD_MSIL2A BOA quantification and additive offsets, align B02-B12 and SCL to a
+        clipped 10 m EPSG:32647 grid, and generate RGB composites, lithology/alteration indices,
+        NDVI, NDWI and categorical masks as validated COGs.
+      - Emit a machine-readable Sentinel source/output identity record and preserve the existing
+        registered received-derivative branch.
+      - Hash the five KOMPSAT image parents and all required TXT/RPC/EPH sidecars before access.
+      - Validate L1G/UTM/RPC metadata and use the registered ALOS DEM for exact-source local RPC
+        orthorectification, band stacking, RGB/false-colour, NDVI and Brovey pan-sharpening.
+      - Produce a machine-lineament review GeoPackage without fabricating outcrop, access-track or
+        disturbance interpretations.
+    remaining_work:
+      - Resolve the remaining METH-READY-002 external-use restriction with the exact EULA and
+        owner/legal interpretation before KOMPSAT provider egress or external publication.
+      - Treat the external 09_interpretation folder as reference/evaluation evidence until its
+        source identities, formulas, thresholds and manual edits are explicitly bound.
+      - Run a new sealed Phase 00-02 production execution so the new Sentinel products enter the
+        standard curated and Drive handover views.
+    non_goals:
+      - Re-enable the retired historical ASTER weighted composite with undefined structure and
+        lithology derivations.
+      - Treat support products as proof of mineralization or silently infer an external-use licence.
+  - item_id: ENG-BACKLOG-007
+    title: Bind georeference acceptance to independently checkable accuracy evidence
+    status: blocked-awaiting-control-data-and-accuracy-authority
+    priority: phase03-scientific-readiness
+    objective: >-
+      Extend the existing measured georeference record with transform-derived residuals,
+      independent checkpoints and a scale-appropriate adopted acceptance rule, without treating
+      operator-entered residual components as independent validation.
+    existing_controls:
+      - Source and derivative bytes, declared GCPs, residual arithmetic, summary statistics,
+        reviewer roles and acceptance chronology are already hash-bound and fail closed.
+      - Phase 03 scientific handoff remains unavailable without exact accepted georeferences.
+    required_inputs:
+      - Original GCP observations and the fitted transformation or its reproducible parameters.
+      - Independent checkpoint coordinates not used to fit the transformation.
+      - A methodology-owner-approved accuracy rule appropriate to each source-map scale.
+    acceptance:
+      - Residuals are calculated from the recorded transform rather than supplied as conclusions.
+      - Fit points and held-out checkpoints are reported separately.
+      - No code-selected threshold can approve a georeference.
+  - item_id: ENG-BACKLOG-006
+    title: Enforce live-provider spend from a versioned pricing contract
+    status: active-provider-usage-discrepancy-blocks-retry
+    priority: ai-cost-control
+    objective: >-
+      Supplement the existing inspected estimate, request, concurrency and output-token limits
+      with post-response cost calculation and refusal of later requests when actual token usage
+      consumes the configured run budget.
+    existing_controls:
+      - Every request reserves an inspected estimated cost transactionally before execution.
+      - Provider responses record exact input, cached-input, output and reasoning-output token usage
+        plus request count.
+      - A schema-valid response is preserved even when reported usage contradicts the requested
+        bound; discarding already-paid output would not limit spend or improve provenance.
+      - No later paid retry was started after the observed usage discrepancy.
+    observed_condition:
+      - AI attempt 019fd092-1440-7b56-84b9-c44380ae73dd completed its legend task with 233,500
+        input and 98,331 reported output tokens even though the request configured a 32,768 output
+        bound; the subsequent feature task was marked failed after the local command timed out.
+      - The successful validated legend remains immutable, but the current chained workflow cannot
+        resume from it without preparing and purchasing the legend task again.
+    required_inputs:
+      - Versioned provider/model input, cached-input and output token prices with effective dates.
+      - An explicit policy for requests that cross a budget on the final in-flight response.
+      - A stage-resume contract that can reuse an exact successful validated legend while creating
+        a fresh feature/critique job after an interruption.
+      - Provider-side confirmation of why reported usage exceeded the documented request bound
+        before another paid Phase 03 attempt is authorized.
+    acceptance:
+      - Every computed charge names the exact pricing-contract identity used.
+      - Subsequent requests fail before egress once recorded usage exhausts the run budget.
+      - Unknown provider/model pricing fails closed rather than assuming zero cost.
   - item_id: ENG-BACKLOG-005
     title: Seal deterministic licence-boundary validation evidence
     status: implemented-awaiting-human-acceptance

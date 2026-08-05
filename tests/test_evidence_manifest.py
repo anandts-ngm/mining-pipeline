@@ -407,6 +407,27 @@ def test_phase03_pipeline_evidence_requires_exact_target_layer(tmp_path: Path) -
         _record(authority, artifact, target_layer_name=None)
 
 
+@pytest.mark.parametrize(
+    "role",
+    [EvidenceRole.ALTERATION_SUPPORT, EvidenceRole.GEOCHEMICAL_ANOMALY],
+)
+def test_phase03_standalone_support_roles_do_not_claim_a_target_layer(
+    tmp_path: Path,
+    role: EvidenceRole,
+) -> None:
+    _runs_root, authority, artifact = _sealed_pipeline_source(tmp_path)
+
+    record = _record(
+        authority,
+        artifact,
+        target_layer_name=None,
+        evidence_role=role,
+    )
+
+    assert record.target_layer_name is None
+    assert record.evidence_role is role
+
+
 def test_phase03_evidence_role_must_own_target_layer(tmp_path: Path) -> None:
     _runs_root, authority, artifact = _sealed_pipeline_source(tmp_path)
 

@@ -1,4 +1,4 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "02"
 requirements:
   - requirement_id: P02-RASTER-MATH-001
@@ -11,7 +11,7 @@ requirements:
     status: adopted
   - requirement_id: P02-SENTINEL-INPUT-001
     statement: The registered received Sentinel composites and ratio products follow the master's received-derivative branch; automation is limited to validated operations supported by those exact inputs, clips them to the licence boundary plus the adopted 1 km context, and never claims raw-band preprocessing.
-    source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.sentinel-qgis402-guide, METH-DISC-035, METH-DISC-064, METH-DISC-071]
+    source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.sentinel-qgis402-guide, METH-DISC-035, METH-DISC-064, METH-DISC-071, METH-DISC-073]
     status: adopted
   - requirement_id: P02-BASEMAP-REFERENCE-001
     statement: The basemap operator guide is a Phase 02 reference only; phase02_processing.yaml fixes input 75 as full-extent visual context and input 76 as 1 km clipped visual context.
@@ -22,8 +22,8 @@ requirements:
     source_refs: [methodology.master-v9, repository.methodology-contracts, phase02.dem-qgis402-guide, METH-DISC-053]
     status: adopted
   - requirement_id: P02-READINESS-QAQC-001
-    statement: ASTER HDF remains provisional and blocked from authoritative downstream use, while KOMPSAT remains excluded under automation_readiness.yaml; other Phase 02 datasets may proceed with those gaps recorded.
-    source_refs: [methodology.master-v9, repository.methodology-contracts, METH-DISC-049, METH-DISC-056]
+    statement: ASTER HDF remains provisional and blocked from authoritative downstream use. Exact-source KOMPSAT local support processing is permitted by METH-DISC-074, while the absent EULA continues to prohibit provider egress and external publication.
+    source_refs: [methodology.master-v9, repository.methodology-contracts, METH-DISC-049, METH-DISC-056, METH-DISC-074]
     status: adopted
   - requirement_id: P02-AI-INTERPRET-001
     statement: AI interpretations of validated imagery remain draft support evidence.
@@ -33,3 +33,201 @@ requirements:
     statement: The historical weighted score is retired as a non-authoritative reference; Phase 02 emits only individually derived measurements with explicit input and formula provenance.
     source_refs: [repository.methodology-contracts, METH-DISC-005, METH-DISC-061]
     status: adopted
+implementation_coverage:
+  - coverage_id: P02-COV-RASTER-NORMALIZATION-001
+    requirement_ids: [P02-RASTER-MATH-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.Step-by-step methodology
+      - methodology.master-v9::02.Phase 2.QA/QC check
+    guide_refs:
+      - phase02.guide::5.QGIS project setup
+      - phase02.guide::11.Final EPSG32647 export
+      - phase02.guide::13.Required output metadata fields
+    resolution_refs: [METH-DISC-019, METH-DISC-025, METH-DISC-071]
+    adopted_behavior: Reproject and clip each supported raster against the exact adopted Phase 01 AOI, preserve product-appropriate resolution and nodata, write valid EPSG:32647 COGs, and retain source and processing metadata on every output row.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_passthrough
+      - src/buduunkhad/core/raster_writers.py::write_cog
+      - src/buduunkhad/core/raster_writers.py::is_cog
+    output_refs:
+      - 02_Phase_2_Remote_Sensing_Preprocessing/<product-workflow>/<derived-raster>.tif
+      - XV-023222_Buduunkhad_RemoteSensing_QAQC_Log.xlsx
+      - XV-023222_Buduunkhad_RemoteSensing_QAQC_Report_v01.docx
+    qaqc_checks:
+      - Every declared raster output is an EPSG:32647 COG or an explicit no-overlap/data-gap result.
+      - Native CRS, output CRS, resolution, nodata, compression, limitation and source identity are recorded.
+      - Every derivative remains labelled support evidence and not ore proof.
+    test_refs:
+      - tests/test_phase02_clip_cog.py::test_reproject_clip_cog_clips_and_reprojects
+      - tests/test_phase02_clip_cog.py::test_reproject_clip_cog_applies_nodata_fallback
+      - tests/test_phase02_clip_cog.py::test_cog_overviews_present_when_larger_than_blocksize
+      - tests/test_phase02.py::test_phase02_real_run
+    status: implemented
+  - coverage_id: P02-COV-DEM-TERRAIN-001
+    requirement_ids: [P02-DEM-PARAMETERS-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.ALOS-PALSAR and ASTER GDEM derivatives
+    guide_refs:
+      - phase02.guide::6.DEM ALOS-PALSAR ASTER GDEM processing
+    resolution_refs: [METH-DISC-053]
+    adopted_behavior: Apply the versioned 5 km terrain profile, generate deterministic elevation, multi-azimuth hillshade, slope, aspect, ruggedness, curvature and flow-accumulation COGs, and build 20 m contours plus controlled hydrology from the primary ALOS DEM.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_dem_elev
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_hydrology
+      - src/buduunkhad/core/dem.py::derive_terrain
+      - src/buduunkhad/core/hydrology.py::build_hydrology
+    output_refs:
+      - XV023222_Buduunkhad_ALOS-PALSAR_DEM_12p5m_<5km-buffer>_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Terrain_Derivatives_Index_v01.xlsx
+      - XV023222_Buduunkhad_Hydrology_Drainage_Watershed_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_Lineament_Interpretation_MachineDraft_EPSG32647_v01.gpkg
+    qaqc_checks:
+      - Terrain rasters are finite, spatially aligned and COG-valid.
+      - Hydrology parameters match the exact phase02_processing.yaml profile.
+      - Machine lineaments remain draft support evidence and cannot become accepted geological structure automatically.
+    test_refs:
+      - tests/test_phase02_clip_cog.py::test_derive_terrain_writes_cogs_and_reports_skips
+      - tests/test_phase02_vectors.py::test_build_hydrology_valley_dem
+      - tests/test_phase02_vectors.py::test_extract_lineaments_finds_straight_feature
+      - tests/test_phase02_vectors.py::test_phase02_vector_products_degrade_gracefully
+    status: implemented
+  - coverage_id: P02-COV-SENTINEL-001
+    requirement_ids: [P02-SENTINEL-INPUT-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.Sentinel raw-or-received branch
+    guide_refs:
+      - phase02.guide::7.Sentinel-2 processing
+    resolution_refs: [METH-DISC-064, METH-DISC-071, METH-DISC-073]
+    adopted_behavior: Process the registered received derivatives without claiming raw bands, and independently process the exact Phase-00-checksummed L2A SAFE archive using BOA scale/offset metadata, aligned B02/B03/B04/B08/B11/B12 and SCL on the adopted 10 m, 1 km-buffer EPSG:32647 grid.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_sentinel_safe
+      - src/buduunkhad/core/sentinel.py::resolve_safe_archive
+      - src/buduunkhad/core/sentinel.py::process_safe_archive
+    output_refs:
+      - XV023222_Buduunkhad_Sentinel2_NaturalRGB_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Sentinel2_Geology_RGB_B12_B08_B03_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Sentinel2_FalseColor_B08_B04_B03_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Sentinel2_NDVI_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Sentinel2_NDWI_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_Sentinel2_CloudShadowSnowWaterVegetation_Masks_EPSG32647_v01.tif
+      - XV-023222_Buduunkhad_Sentinel2_SAFE_Processing_Record.json
+    qaqc_checks:
+      - Exact SAFE path, SHA-256 and byte size match the processing contract.
+      - Required bands and SCL are complete, scale/offset metadata are applied and grids align exactly.
+      - Received derivatives and SAFE-derived products keep separate identities and limitations.
+    test_refs:
+      - tests/test_sentinel.py::test_safe_source_resolution_is_path_and_hash_bound
+      - tests/test_sentinel.py::test_safe_archive_requires_every_band
+      - tests/test_sentinel.py::test_safe_archive_produces_complete_cog_set_and_record
+      - tests/test_phase02.py::test_phase02_sentinel_clip_margins_flagged_nodata
+    status: implemented
+  - coverage_id: P02-COV-ASTER-001
+    requirement_ids: [P02-ASTER-AUTHORITY-GAP-001, P02-WEIGHTED-SCORE-DEFERRED-001, P02-READINESS-QAQC-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.ASTER workflow
+      - methodology.master-v9::3.Remote sensing special subworkflows
+    guide_refs:
+      - phase02.guide::8.ASTER HDF workflow v5
+    resolution_refs: [METH-DISC-020, METH-DISC-021, METH-DISC-056, METH-DISC-061, METH-DISC-063]
+    adopted_behavior: Validate the exact HDF and its subdatasets before use, extract and align supported bands, emit individually traceable indices, anomaly masks, score and polygon support products, and exclude the historical combined weighted formula with undocumented structure and lithology inputs.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._run_aster_chain
+      - src/buduunkhad/core/aster.py::compute_indices
+      - src/buduunkhad/core/aster.py::score_targets
+      - src/buduunkhad/core/aster_readiness.py::validate_aster_readiness
+    output_refs:
+      - XV023222_Buduunkhad_ASTER_<individual-index>_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_ASTER_<anomaly-mask>_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_ASTER_Porphyry_Target_Score_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_ASTER_Porphyry_Target_Polygons_EPSG32647_v01.gpkg
+      - XV-023222_Buduunkhad_ASTER_HDF_Readiness_Record.json
+      - XV-023222_Buduunkhad_ASTER_Anomaly_Threshold_Register.xlsx
+    qaqc_checks:
+      - HDF opening, subdataset identity, dimensions, geolocation, CRS and output validation are exact-source bound.
+      - Index and threshold provenance remains per-product rather than hidden in an undocumented composite.
+      - Unavailable HDF capability yields an explicit readiness record and does not fabricate ASTER outputs.
+    test_refs:
+      - tests/test_aster.py::test_compute_indices_ratios_and_ndvi
+      - tests/test_aster.py::test_score_targets_stats_mask_changes_threshold_basis
+      - tests/test_aster_readiness.py::test_ready_record_requires_subdatasets_geolocation_and_valid_output
+      - tests/test_aster_readiness.py::test_unavailable_record_still_binds_exact_hdf_bytes
+      - tests/test_phase02.py::test_phase02_aster_falls_back_to_method_note_without_gdal
+    status: implemented-with-review
+    remaining_work:
+      - Resolve the exact real-run ASTER readiness result before treating its derivatives as available downstream evidence.
+  - coverage_id: P02-COV-KOMPSAT-001
+    requirement_ids: [P02-READINESS-QAQC-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.KOMPSAT-2 processing
+    guide_refs:
+      - phase02.guide::9.KOMPSAT-2 processing
+    resolution_refs: [METH-DISC-049, METH-DISC-056, METH-DISC-074]
+    adopted_behavior: Inventory the exact PAN and Blue/Green/Red/NIR bundle with RPC/EPH/TXT sidecars, orthorectify against registered ALOS DEM input 12 on the adopted 1 km AOI, and emit 1 m PAN, 4 m multispectral, RGB, false-colour, NDVI, Brovey pansharpening and machine-draft interpretation locally.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_kompsat_inventory
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_kompsat_processing
+      - src/buduunkhad/core/kompsat.py::process_bundle
+    output_refs:
+      - XV023222_Buduunkhad_KOMPSAT2_PAN_Orthorectified_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_MS_BandStack_BGRNIR_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_TrueColor_RGB_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_FalseColor_NIR_Red_Green_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_NDVI_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_Pansharpened_Orthobasemap_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_KOMPSAT2_Lineament_Outcrop_Interpretation_EPSG32647_v01.gpkg
+      - XV-023222_Buduunkhad_KOMPSAT2_Processing_Record.json
+    qaqc_checks:
+      - Bundle inventory, band identity, RPC metadata and exact source hashes are complete.
+      - Orthorectified products match EPSG:32647, adopted resolutions, AOI and finite/nodata rules.
+      - The absent EULA remains explicit and external egress/publication stay disabled.
+    test_refs:
+      - tests/test_kompsat.py::test_kompsat_inventory_hashes_exact_bundle_without_opening_images
+      - tests/test_kompsat.py::test_kompsat_inventory_fails_when_a_sidecar_is_missing
+      - tests/test_kompsat.py::test_brovey_rgb_is_aligned_bounded_and_preserves_invalid_pixels
+      - tests/test_kompsat.py::test_kompsat_processing_record_forbids_external_distribution
+    status: implemented
+  - coverage_id: P02-COV-BASEMAP-001
+    requirement_ids: [P02-BASEMAP-REFERENCE-001]
+    master_refs:
+      - methodology.master-v9::02.Phase 2.Basemap processing
+    guide_refs:
+      - phase02.guide::10.Google high-resolution basemap processing
+    resolution_refs: [METH-DISC-052, METH-DISC-065]
+    adopted_behavior: Reproject registered input 75 at full extent as district context and input 76 against the 1 km AOI as detailed surface context, preserving both as visual-reference products without positive prospectivity meaning.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_passthrough
+      - src/buduunkhad/core/raster_writers.py::write_cog
+    output_refs:
+      - XV023222_Buduunkhad_GoogleMaps_BasemapImagery_RGB_2p4m_<full-extent>_EPSG32647_v01.tif
+      - XV023222_Buduunkhad_HighResolution_RGB_SurfaceBasemap_0p15m_<1km-buffer>_EPSG32647_v01.tif
+    qaqc_checks:
+      - Input 75 remains full-extent context and input 76 remains the 1 km detailed context.
+      - Basemap outputs remain visual reference and never score as positive geological evidence by themselves.
+    test_refs:
+      - tests/test_phase02.py::test_phase02_real_run
+      - tests/test_phase02_clip_cog.py::test_reproject_clip_cog_clips_and_reprojects
+    status: implemented
+  - coverage_id: P02-COV-AI-INTERPRETATION-001
+    requirement_ids: [P02-AI-INTERPRET-001]
+    master_refs:
+      - methodology.master-v9::0.Methodology scope and governing principles
+      - methodology.master-v9::02.Phase 2.Decision gate
+    guide_refs:
+      - phase02.guide::16.Most important warning
+    resolution_refs: []
+    adopted_behavior: Permit deterministic machine lineament drafts and bounded AI interpretation proposals, but require AI_DRAFT lifecycle state and retain deterministic validation and qualified review boundaries before any accepted scientific use.
+    implementation_refs:
+      - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_lineaments
+      - src/buduunkhad/ai/artifacts.py::AIArtifact
+    output_refs:
+      - XV023222_Buduunkhad_Lineament_Interpretation_MachineDraft_EPSG32647_v01.gpkg
+      - AI_DRAFT review package
+    qaqc_checks:
+      - Machine geometry is labelled draft support evidence with source, method and limitations.
+      - Provider output cannot create AI_VALIDATED or GEOLOGIST_APPROVED state by itself.
+      - Missing or ambiguous interpretation remains a gap rather than a positive feature.
+    test_refs:
+      - tests/test_phase02_vectors.py::test_extract_lineaments_finds_straight_feature
+      - tests/ai/test_contracts.py::test_review_states_are_exact
+      - tests/ai/test_review.py::test_creation_and_authoritative_validation_transitions
+    status: implemented

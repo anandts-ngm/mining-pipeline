@@ -13,6 +13,7 @@ import pytest
 
 from buduunkhad.core import paths, vector_io
 from buduunkhad.core.gates import GateStatus
+from buduunkhad.core.phase03_sources import load_phase03_source_traceability
 from buduunkhad.core.qaqc import Decision
 from buduunkhad.phases.base import RunContext
 from buduunkhad.phases.phase00_archive import Phase00Archive
@@ -148,6 +149,25 @@ def test_phase03_score_matrix_shape(project):
     assert len(header) == 8
     # 8 criteria + total row = 9 data rows
     assert ws.max_row == 1 + 9
+
+
+def test_phase03_real_run_binds_exact_phase00_source_set(raw_archive):
+    config, register, _raw = raw_archive
+    _ctx_value, phase, result = _run_real(config, register)
+    handover = paths.phase_dir(config.output_root, "03") / "12_Phase3_QAQC_and_Handover"
+    record_path = next(handover.glob("*Phase3_Source_Traceability.json"))
+    record = load_phase03_source_traceability(record_path)
+
+    assert record.traceability_id == phase._source_traceability.traceability_id
+    assert tuple(item.input_no for item in record.records) == (
+        *range(1, 9),
+        *range(53, 73),
+    )
+    assert all(len(item.source_sha256) == 64 for item in record.records)
+    register_path = next(handover.glob("*Phase3_Source_Traceability_Register*.xlsx"))
+    sheet = openpyxl.load_workbook(register_path, read_only=True).active
+    assert sheet is not None and sheet.max_row == 29
+    assert record_path in result.outputs and register_path in result.outputs
 
 
 def test_phase03_cmcs_buffer_four_rings(raw_archive):
@@ -501,6 +521,78 @@ def test_phase03_ingests_only_manifest_selected_human_layer(raw_archive):
     assert ingested["validation_status"].iloc[0] == "Historical only"
 
 
+def test_phase03_merges_multiple_exact_sources_into_one_canonical_layer(raw_archive):
+    """Several valid sources may contribute to one adopted layer without ID collisions."""
+
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from buduunkhad.core.evidence_manifest import (
+        EvidenceExecutionMode,
+        EvidenceLifecycleState,
+        EvidenceOrigin,
+        EvidenceRecord,
+        EvidenceRole,
+        EvidenceSourceKind,
+        ResolvedEvidence,
+    )
+    from buduunkhad.core.run_artifacts import sha256_file
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    phase1 = Phase01DataAudit()
+    phase1.prepare(ctx)
+    phase1.run(ctx)
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    source_root = paths.phase_dir(config.output_root, "03") / "exact-occurrence-sources"
+    source_root.mkdir(parents=True, exist_ok=True)
+    resolved = []
+    for index, manifest_character in enumerate(("b", "c"), start=1):
+        artifact = source_root / f"occurrences-{index}.gpkg"
+        gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
+            {"feature_id": ["SOURCE-1"], "name": [f"Occurrence {index}"]},
+            geometry=[Point(400_000 + index, 5_000_000 + index)],
+            crs=f"EPSG:{config.target_epsg}",
+        ).to_file(artifact, layer="occurrences", driver="GPKG")
+        record = EvidenceRecord(
+            evidence_id=f"EV-occurrence-{index}",
+            source_kind=EvidenceSourceKind.PIPELINE_RUN,
+            source_run_id=f"source-run-{index}",
+            source_authority_path="run_manifest.json",
+            source_authority_sha256="a" * 64,
+            artifact_path=f"phases/03/{artifact.name}",
+            artifact_sha256=sha256_file(artifact),
+            artifact_size_bytes=artifact.stat().st_size,
+            layer_name="occurrences",
+            target_layer_name="mineral_occurrences_point",
+            evidence_role=EvidenceRole.OCCURRENCE,
+            origin=EvidenceOrigin.HUMAN_DIGITIZED,
+            lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+            eligible_phases=("03",),
+            eligible_modes=(EvidenceExecutionMode.SUPPORT_EVIDENCE,),
+        )
+        resolved.append(
+            ResolvedEvidence(
+                manifest_id=manifest_character * 64,
+                manifest_sha256="d" * 64,
+                catalog_entry_id="e" * 64,
+                record=record,
+                artifact=artifact,
+            )
+        )
+    ctx.resolved_evidence = tuple(resolved)
+
+    phase.run(ctx)
+
+    ingested = vector_io.read_layer(_evidence_gpkg(config), "mineral_occurrences_point")
+    assert list(ingested["feature_id"]) == ["BUD-MIN-0001", "BUD-MIN-0002"]
+    assert len(set(ingested["source_group"])) == 2
+    assert all(len(value) <= 64 for value in ingested["source_group"])
+    assert phase._ingested_layers.count("mineral_occurrences_point") == 1
+
+
 def test_phase03_never_discovers_nearby_ai_handoff_evidence(raw_archive):
     """Rich AI review lineage is not discovered or normalized because of file proximity."""
 
@@ -534,6 +626,78 @@ def test_phase03_never_discovers_nearby_ai_handoff_evidence(raw_archive):
     evidence = vector_io.read_layer(_evidence_gpkg(config), "faults_structures_line")
     assert len(evidence) == 0
     assert not phase._ingested_layers
+
+
+def test_phase03_records_standalone_alteration_and_geochemical_evidence(raw_archive):
+    from buduunkhad.core.evidence_manifest import (
+        EvidenceExecutionMode,
+        EvidenceLifecycleState,
+        EvidenceOrigin,
+        EvidenceRecord,
+        EvidenceRole,
+        EvidenceSourceKind,
+        ResolvedEvidence,
+    )
+    from buduunkhad.core.run_artifacts import sha256_file
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    Phase00Archive().run(ctx)
+    phase1 = Phase01DataAudit()
+    phase1.prepare(ctx)
+    phase1.run(ctx)
+    source_root = paths.phase_dir(config.output_root, "03") / "standalone"
+    source_root.mkdir(parents=True, exist_ok=True)
+    definitions = (
+        ("EV-alteration", EvidenceRole.ALTERATION_SUPPORT),
+        ("EV-geochemistry", EvidenceRole.GEOCHEMICAL_ANOMALY),
+    )
+    resolved = []
+    for evidence_id, role in definitions:
+        artifact = source_root / f"{evidence_id}.gpkg"
+        artifact.write_bytes(evidence_id.encode("ascii"))
+        record = EvidenceRecord(
+            evidence_id=evidence_id,
+            source_kind=EvidenceSourceKind.PIPELINE_RUN,
+            source_run_id="phase02-source-run",
+            source_authority_path="run_manifest.json",
+            source_authority_sha256="a" * 64,
+            artifact_path=f"phases/02/{artifact.name}",
+            artifact_sha256=sha256_file(artifact),
+            artifact_size_bytes=artifact.stat().st_size,
+            layer_name=role.value,
+            target_layer_name=None,
+            evidence_role=role,
+            origin=EvidenceOrigin.DETERMINISTIC_PIPELINE,
+            lifecycle_state=EvidenceLifecycleState.SEALED_SUPPORT_EVIDENCE,
+            eligible_phases=("03",),
+            eligible_modes=(EvidenceExecutionMode.SUPPORT_EVIDENCE,),
+        )
+        resolved.append(
+            ResolvedEvidence(
+                manifest_id=("b" if role is EvidenceRole.ALTERATION_SUPPORT else "c") * 64,
+                manifest_sha256="d" * 64,
+                catalog_entry_id="e" * 64,
+                record=record,
+                artifact=artifact,
+            )
+        )
+    ctx.resolved_evidence = tuple(resolved)
+    phase = Phase03GeologySynthesis()
+    phase.prepare(ctx)
+    phase.run(ctx)
+
+    assert phase._selected_role_counts[EvidenceRole.ALTERATION_SUPPORT] == 1
+    assert phase._selected_role_counts[EvidenceRole.GEOCHEMICAL_ANOMALY] == 1
+    assert len(phase._standalone_evidence) == 2
+    assert not any(row["gap_id"] in {"P3-GAP-001", "P3-GAP-002"} for row in phase._data_gap_rows())
+    support_path = next(
+        (paths.phase_dir(config.output_root, "03") / "11_Evidence_Scoring_and_DataGap").glob(
+            "*Selected_Support_Evidence_Availability*.xlsx"
+        )
+    )
+    sheet = openpyxl.load_workbook(support_path, read_only=True).active
+    assert sheet is not None and sheet.max_row == 3
 
 
 def test_phase03_detects_evidence_mutation_during_layer_read(raw_archive, monkeypatch):

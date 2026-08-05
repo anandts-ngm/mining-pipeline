@@ -1,7 +1,7 @@
-format_version: 1.1.0
+format_version: 1.3.0
 phase_id: "02"
 authority_source: methodology.master-v9
-decision_sources: [METH-DISC-052, METH-DISC-053, METH-DISC-071]
+decision_sources: [METH-DISC-052, METH-DISC-053, METH-DISC-071, METH-DISC-073, METH-DISC-074]
 policy_status: adopted-support-evidence-contract
 scientific_use: support-evidence-only
 sentinel_profile:
@@ -10,6 +10,29 @@ sentinel_profile:
   operation: reproject-and-clip
   clip_buffer_m: 1000
   rationale: Use the exact master's permitted 1 km context for every registered received Sentinel derivative, preserving edge evidence without claiming raw-band preprocessing or scientific approval.
+supplementary_sentinel_safe:
+  profile_id: sentinel-l2a-safe-10m-support-v1
+  archive_relative_path: 08_Supplementary_Source_Documents/07_Basemap_Sentinel2_ASTER/Sentinel2_L2A_SAFE/S2B_MSIL2A_20250528T043659_N0511_R033_T46TGS_20250528T065044.SAFE.zip
+  source_sha256: 8c1134357c149e76921cc275636f2d82608cacfd88d85d55d882a1f27bcf62eb
+  source_size_bytes: 1098751535
+  operation: l2a-safe-align-clip-derive
+  target_resolution_m: 10.0
+  clip_buffer_m: 1000
+  rationale: Preserve the 79-input registered baseline while using the exact later-supplied L2A SAFE archive as a Phase-00-checksummed supplementary source for deterministic raw-band support products.
+kompsat_profile:
+  profile_id: kompsat2-rpc-dem-local-support-v1
+  input_numbers: [24, 28, 32, 36, 40]
+  rpc_dem_input_number: 12
+  operation: rpc-dem-ortho-stack-derive
+  target_epsg: 32647
+  clip_buffer_m: 1000
+  pan_resolution_m: 1.0
+  multispectral_resolution_m: 4.0
+  multispectral_band_order: [BLUE, GREEN, RED, NIR]
+  pansharpen_method: Brovey-RGB
+  external_egress_allowed: false
+  external_publication_allowed: false
+  rationale: The exact local L1G/RPC bundle is complete and the repository owner directed local deterministic processing on 2026-08-05. Use input 12 as the RPC terrain model, retain support-evidence labels, and keep external distribution disabled while the registered EULA remains absent.
 basemap_assets:
   - input_number: 75
     role: district-context-visual-reference
@@ -47,4 +70,6 @@ dem_profiles:
 parameter_policy:
   - These values freeze reproducible support-evidence behavior; they do not establish ore, grade, target or field-decision thresholds.
   - Sentinel inputs 74, 77 and 78 use the licence boundary plus 1 km under METH-DISC-071; bare-boundary clipping is retired.
+  - The exact supplementary L2A SAFE archive is additive under METH-DISC-073; it does not replace or rewrite the 79 registered input identities.
+  - KOMPSAT local processing is exact-source and RPC+DEM bound under METH-DISC-074; the absent EULA remains explicit and forbids provider egress or external publication.
   - A future scientific recalibration must create a new versioned profile and discrepancy decision rather than mutating these values silently.

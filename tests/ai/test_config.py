@@ -8,6 +8,8 @@ from pydantic import ValidationError
 
 from buduunkhad.config import (
     AIConfig,
+    AIPhase03SourceConfig,
+    AIPhase03WorkflowConfig,
     AIProviderSelection,
     ExecutionProfile,
     ProjectConfig,
@@ -28,6 +30,8 @@ def test_unchanged_project_yaml_loads_with_offline_legacy_defaults() -> None:
     assert config.ai.external_data_allowed is False
     assert config.ai.max_cost_per_run_usd == Decimal("0")
     assert config.ai.max_requests_per_run == 1
+    assert config.ai.max_input_images_per_request == 32
+    assert config.ai.max_input_bytes_per_request == 100_000_000
     assert config.ai.max_output_tokens == 4096
     assert config.ai.concurrency == 1
 
@@ -42,22 +46,73 @@ def test_standalone_openai_profile_is_explicit_and_does_not_change_default() -> 
     assert ai.profile is ExecutionProfile.AI_FIRST
     assert ai.enabled is True
     assert ai.provider is AIProviderSelection.OPENAI
-    assert ai.provider_model == "gpt-5.6-sol"
-    assert ai.reasoning_effort is ReasoningEffort.XHIGH
+    assert ai.provider_model == "gpt-5.6-terra"
+    assert ai.reasoning_effort is ReasoningEffort.MAX
     assert ai.reasoning_mode is ReasoningMode.PRO
     assert ai.text_verbosity is TextVerbosity.MEDIUM
     assert ai.store_responses is False
     assert ai.external_data_allowed is True
     assert ai.request_timeout_seconds == 3600
-    assert ai.max_output_tokens == 128000
+    assert ai.max_output_tokens == 32768
     assert ai.max_requests_per_run == 4
+    assert ai.max_input_images_per_request == 24
+    assert ai.max_input_bytes_per_request == 100_000_000
     assert ai.max_cost_per_run_usd == Decimal("20.00")
     assert ai.phase03_workflow is not None
     assert ai.phase03_workflow.legend_tile_size == 4096
     assert ai.phase03_workflow.feature_tile_size == 1536
     assert ai.phase03_workflow.critique_estimated_cost_usd == Decimal("4.00")
+    assert tuple(item.source_id for item in ai.phase03_workflow.configured_sources) == (
+        "regional-geology-1987-200k",
+        "detailed-geology-2013-50k",
+        "regional-metallogeny-2020-500k",
+        "mineral-distribution-2013-100k",
+        "prospectivity-2013-50k",
+        "source-materials-2013-50k",
+    )
     assert config.ai == ai
     assert load_config(Path("config/project.yaml")).ai.profile is ExecutionProfile.LEGACY
+
+
+def test_phase03_ai_workflow_supports_explicit_unique_source_batches() -> None:
+    workflow = AIPhase03WorkflowConfig(
+        sources=(
+            AIPhase03SourceConfig(
+                source_id="regional-200k",
+                legend_source="phase03/legend-200k.png",
+                feature_source="phase03/geology-200k.tif",
+            ),
+            AIPhase03SourceConfig(
+                source_id="local-50k",
+                legend_source="phase03/legend-50k.png",
+                feature_source="phase03/geology-50k.tif",
+            ),
+        )
+    )
+
+    assert tuple(item.source_id for item in workflow.configured_sources) == (
+        "regional-200k",
+        "local-50k",
+    )
+    assert workflow.source("local-50k").feature_source.endswith("geology-50k.tif")
+    with pytest.raises(ValueError, match="explicit source ID"):
+        workflow.source()
+
+    with pytest.raises(ValidationError, match="source IDs must be unique"):
+        AIPhase03WorkflowConfig(
+            sources=(
+                AIPhase03SourceConfig(
+                    source_id="duplicate",
+                    legend_source="phase03/legend-a.png",
+                    feature_source="phase03/map-a.tif",
+                ),
+                AIPhase03SourceConfig(
+                    source_id="duplicate",
+                    legend_source="phase03/legend-b.png",
+                    feature_source="phase03/map-b.tif",
+                ),
+            )
+        )
 
 
 def test_standalone_ai_profile_rejects_project_fields_and_credentials(tmp_path: Path) -> None:

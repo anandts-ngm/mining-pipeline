@@ -51,11 +51,31 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 ## 3. Current implemented state
 
 - Phases 00–02 have substantial deterministic implementations.
-- Phase 03 has a substantial deterministic scaffold, source-specific legend/feature request
-  preparation, non-destructive overlap review, an opt-in AI review handoff, structured 03A
-  assessment/critique records, and an exact scientific-handoff resolver. It remains
+- Phase 00–02 methodology contracts synthesize the exact master with compatible detail from the
+  adopted phase guides without altering either source. Contract v1.1 maps every adopted
+  requirement to exact implementation references, output artifacts, QA/QC checks, tests, and any
+  remaining review work; the master continues to win every conflict.
+- Phase 02 additionally binds the exact later-supplied Sentinel-2 L2A SAFE archive as a
+  Phase-00-checksummed supplementary source without changing the 79 registered input identities.
+  It applies the source BOA scale/offset metadata, aligns the required bands and SCL to the
+  adopted 10 m EPSG:32647 grid, and emits COG composites, indices and masks plus a source/output
+  identity record. Under the repository-owner direction recorded by METH-DISC-074, Phase 02 also
+  processes the exact local KOMPSAT L1G/RPC bundle with the registered ALOS DEM into 1 m PAN,
+  4 m multispectral, RGB/false-colour, NDVI, Brovey pan-sharpened and machine-lineament support
+  products. The absent EULA remains explicit; KOMPSAT provider egress and external publication
+  stay disabled until that separate licence evidence is supplied.
+- Phase 03 has exact Phase-00 source traceability, a substantial deterministic scaffold,
+  content-aware evidence QA/QC, source-specific and multi-source legend/feature execution,
+  non-destructive overlap review, an opt-in AI review handoff, an exact eight-criterion 100-point
+  03A assessment/critique workbook and record, and an exact scientific-handoff resolver. It remains
   scientifically incomplete until qualified humans supply the required georeferencing,
   digitizing, interpretation, review, and deposit-model decisions.
+- Phase 03 local map onboarding copies exact bytes into an immutable source-specific snapshot
+  package, records truthful CRS/dimensions and rejects CRS-less rasters. The AI profile catalogs
+  six prepared real map sources, but a live multi-source run must explicitly select each intended
+  `--ai-source`; it never sends the whole catalog implicitly. Multiple exact evidence manifests
+  may populate one canonical Phase 03 layer and receive collision-free deterministic feature IDs
+  while retaining their separate source authority.
 - Pending master-required Phase 03 human/scientific items block its handoff and authoritative
   downstream use; no operational exception turns them into completed evidence. An exact sealed
   support-evidence run with passing deterministic QA/QC may feed only the Phase 04 legacy
@@ -82,11 +102,11 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
 - The base `project.yaml` remains keyless and offline with the `legacy` profile. For the main
   Buduunkhad CLI, its sibling `ai.openai.yaml` is the explicit AI-first execution profile and is
   loaded automatically by `buduunkhad run`; another profile may be selected with `--ai-config`.
-  Phase 03 then uses the OpenAI Responses API with `gpt-5.6-sol`, xhigh reasoning, strict structured
-  output, explicit cost/request limits, and exact configured snapshot sources. A real run
-  containing Phase 03 executes this workflow after deterministic phase sealing; `--offline-ai` is
-  the explicit offline alternative. Library calls and project configurations without the sidecar
-  remain offline by default.
+  Phase 03 then uses the OpenAI Responses API with `gpt-5.6-terra`, Pro mode, max reasoning, strict
+  structured output, explicit cost/request limits, and exact configured snapshot sources. Live
+  calls require `--ai` and a run-scoped `--ai-approved-by`; without `--ai`, a real Phase 03 run
+  remains offline. Library calls and project configurations without the sidecar remain offline by
+  default.
 - The keyless AI-to-QGIS slice can prepare inspectable packages, ingest saved responses, validate
   and transform pixel geometry, produce `AI_DRAFT` GIS/QGIS outputs, and evaluate them offline.
 - A generated integrated Phase 03 QGIS review project can display exact sealed Phase 01–03
@@ -118,6 +138,10 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   grouped under Phase 03 in curated results, while their append-only ledger and trust lifecycle
   stay distinct from deterministic phase seals so a model proposal cannot be mistaken for a
   deterministic output or accepted scientific evidence.
+- Live AI requests are independently bounded by exact deterministic image count and prepared raw
+  payload bytes. The Phase 03 source is preflighted before an attempt directory or provider call,
+  so a large full-map source must be cropped or use a separately reviewed batching workflow rather
+  than hiding hundreds of image attachments behind one request count.
 - The Phase 03 handoff promotes explicit human decisions only to standalone `ACCEPTED_EVIDENCE`.
   Promotion also creates a hash-bound Phase-03-only evidence manifest. It does not create
   `GEOLOGIST_APPROVED`, merge into legacy Phase 03 automatically, or satisfy a scientific gate.
@@ -145,9 +169,10 @@ dirty worktree. Never invent authority, identity, review, approval, dates, evide
   human items keep the Phase 03 scientific gate blocked. This bridge is limited to
   `legacy-comparator`; it does not satisfy the scientific handoff, activate authoritative Phase 04,
   or make dry-run scaffolding operational evidence.
-- Run manifest v2.2 binds policy, per-phase execution mode, and every used scoped authorization.
+- Run manifest v2.3 binds policy, per-phase execution mode, every used scoped authorization, and
+  a secret-free Python/geospatial execution-environment identity used for safe resume.
   Publication manifest v1.2 preserves those identities and forces scaffold, support-evidence, and
-  legacy-comparator packages to remain provisional; v2.0/v2.1 runs and v1.1 packages remain
+  legacy-comparator packages to remain provisional; v2.0–v2.2 runs and v1.1 packages remain
   readable and verifiable.
 
 The operating principle is: AI proposes; deterministic code transforms, measures, validates, and
@@ -158,12 +183,16 @@ packages; qualified humans approve high-impact geological outputs.
 External methodology is read-only. List metadata before opening documents and avoid bulk hydration
 or unrelated binary inspection. Never write to the workflow-docs root.
 
-The 17 files explicitly registered under `docs/methodology/` are intentional byte-for-byte source
+The 13 files explicitly registered under `docs/methodology/` are intentional byte-for-byte source
 mirrors from a verified snapshot. They are the only production-document exceptions permitted in
 Git. Every mirror must retain its exact repository path, lowercase SHA-256, byte size, source
 snapshot SHA-256, stable external file ID where known, and authority status in
 `config/methodology/authority.yaml`; the repository policy independently pins the same path and
 hash. A changed, renamed, unlisted, symlinked, or escaping document is forbidden.
+
+The obsolete v6 master and the three reference-only Phase 02 operator guides retain external
+historical identities in the authority registry but intentionally have no repository mirrors.
+Only `methodology.master-v9` governs the workflow.
 
 Document existence is distinct from content equivalence, canonical selection, adoption, and
 scientific approval. Obsolete and reference-only documents remain evidence, not policy. Do not
@@ -230,10 +259,11 @@ strict serializer and repository-controlled semantic schema identity.
 
 Production providers are only `disabled`, `openai`, and `anthropic`. SDKs are optional and lazy.
 Read credentials only at execution time and never persist them in tracked content, manifests,
-logs, or outputs. The CLI may load machine-local values from the repository-root `.env`; that file
-must remain ignored and untracked, is never copied into a run, and cannot override an environment
-variable already present in the process. Saved-response ingestion is not local provider execution
-and must retain a truthful origin label.
+logs, or outputs. The CLI may load only `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` from the
+repository-root `.env`; that file must remain ignored and untracked, is never copied into a run,
+and cannot override an environment variable already present in the process. Paths, actor names,
+approvals, and delivery destinations are forbidden in `.env`. Saved-response ingestion is not
+local provider execution and must retain a truthful origin label.
 
 Live execution requires explicit user authorization, an enabled non-legacy profile, configured
 limits, a key, the optional SDK, and a named run-scoped egress authorization. The runner converts

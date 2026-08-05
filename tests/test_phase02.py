@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import rasterio
 
-from buduunkhad.core import paths, raster_writers
+from buduunkhad.core import kompsat, paths, raster_writers
 from buduunkhad.core.aster_readiness import (
     AsterReadinessStatus,
     load_aster_readiness_record,
@@ -85,6 +85,14 @@ def test_phase02_real_run(raw_archive):
     assert "geologist's QGIS SOP" not in aster_note
     assert "reference `ASTER_Project` outputs" not in aster_note
     assert list((pdir / "03_KOMPSAT2_ILWIS368_QGIS" / "04_Orthorectification").glob("*.md"))
+    kompsat_records = list(
+        (pdir / "03_KOMPSAT2_ILWIS368_QGIS" / "02_Metadata_RPC_EPH_Check").glob("*.json")
+    )
+    assert len(kompsat_records) == 1
+    kompsat_record = kompsat.load_inventory_record(kompsat_records[0])
+    assert kompsat_record.inventory_complete
+    assert not kompsat_record.image_content_opened
+    assert kompsat_record.processing_status == "excluded-meth-ready-002"
 
     # KOMPSAT bands + ASTER HDF are method-note rows (not processed in-pipeline)
     decisions = {r["no"]: r["decision"] for r in phase._rows}
@@ -94,6 +102,8 @@ def test_phase02_real_run(raw_archive):
     assert all(r["validation_status"] == "Support evidence only" for r in phase._rows)
 
     report = phase.qaqc(ctx)
+    kompsat_item = next(item for item in report.items if "exact bundle" in item.item)
+    assert kompsat_item.decision.value == "Pass"
     decision = phase.gate(report, ctx)
     assert decision.status is GateStatus.GO, decision.reason
 

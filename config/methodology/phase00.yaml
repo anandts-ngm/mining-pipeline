@@ -1,4 +1,4 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "00"
 requirements:
   - requirement_id: P00-RAW-IDENTITY-001
@@ -21,3 +21,74 @@ requirements:
     statement: AI metadata suggestions must not change raw identity or placement automatically.
     source_refs: [repository.methodology-contracts]
     status: adopted
+implementation_coverage:
+  - coverage_id: P00-COV-RAW-ARCHIVE-001
+    requirement_ids: [P00-RAW-IDENTITY-001, P00-ARCHIVE-BOUNDARY-001, P00-SIDECAR-BUNDLE-001]
+    master_refs:
+      - methodology.master-v9::00.Raw Files Archive.Step-by-step methodology
+      - methodology.master-v9::00.Raw Files Archive.QA/QC check
+    guide_refs:
+      - phase01.guide::4.Alham 1.Raw archive protection and working copy
+    resolution_refs: [METH-DISC-007, METH-DISC-008, METH-DISC-009]
+    adopted_behavior: Hash the complete raw tree, preserve parent-sidecar bundles, copy every registered and supplementary source into the isolated Phase 00 archive, and verify the source tree is unchanged.
+    implementation_refs:
+      - src/buduunkhad/phases/phase00_archive.py::Phase00Archive.run
+      - src/buduunkhad/core/raw_guard.py::build_checksum_records
+      - src/buduunkhad/core/sidecars.py::copy_bundle
+    output_refs:
+      - 00_Raw_Files_Archive/<evidence-group>/<source-bundle>
+      - 00_Raw_Files_Archive/08_Supplementary_Source_Documents/<source-relative-path>
+      - XV-023222_Buduunkhad_Raw_Data_Integrity_Log.xlsx
+      - SHA-256_Checksum_Register.csv
+    qaqc_checks:
+      - Complete raw-tree checksum baseline is written.
+      - Registered working copies and sidecars are present without modifying raw bytes.
+      - Duplicate raw basenames fail closed before copying.
+    test_refs:
+      - tests/test_phase00.py::test_phase00_real_run
+      - tests/test_phase00.py::test_phase00_raw_is_untouched
+      - tests/test_phase00.py::test_phase00_archives_unregistered_supplementary_files
+      - tests/test_phase00.py::test_phase00_rejects_duplicate_raw_basenames
+    status: implemented
+  - coverage_id: P00-COV-INVENTORY-001
+    requirement_ids: [P00-REGISTERED-INVENTORY-001]
+    master_refs:
+      - methodology.master-v9::00.Raw Files Archive.Expected outputs
+      - methodology.master-v9::1A.Explicit raw input assignment by workflow phase
+    guide_refs:
+      - phase01.guide::4.Alham 2.Master inventory
+    resolution_refs: [METH-DISC-001, METH-DISC-009]
+    adopted_behavior: Preserve all 79 registered identities and record exact filenames, source grouping, working-copy state, hashes, gaps, and methodology actions without renumbering the master register.
+    implementation_refs:
+      - src/buduunkhad/phases/phase00_archive.py::Phase00Archive._inventory_row
+      - src/buduunkhad/phases/phase00_archive.py::Phase00Archive._catalog_rows
+    output_refs:
+      - XV-023222_Buduunkhad_79Input_Master_Inventory.xlsx
+      - XV-023222_Buduunkhad_Source_Data_Readme.docx
+    qaqc_checks:
+      - Inventory row count and identities match the adopted 79-input register.
+      - Known manifest gaps remain explicit and do not become fabricated files.
+    test_refs:
+      - tests/test_phase00.py::test_phase00_real_run
+      - tests/test_phase00.py::test_phase00_dry_run_writes_empty_scaffolding
+    status: implemented
+  - coverage_id: P00-COV-AUTHORITY-BOUNDARY-001
+    requirement_ids: [P00-AI-SUGGESTION-001]
+    master_refs:
+      - methodology.master-v9::00.Raw Files Archive.Decision gate
+    guide_refs: []
+    resolution_refs: [METH-DISC-007]
+    adopted_behavior: Permit no AI or inferred metadata path to rename, relocate, overwrite, synthesize, or approve a raw source; Phase 00 identity comes only from exact files, manifests, and deterministic hashes.
+    implementation_refs:
+      - src/buduunkhad/phases/phase00_archive.py::Phase00Archive.run
+      - src/buduunkhad/core/raw_guard.py::assert_not_raw_write
+    output_refs:
+      - XV-023222_Buduunkhad_Raw_Data_Integrity_Log.xlsx
+      - SHA-256_Checksum_Register.csv
+    qaqc_checks:
+      - The raw tree re-verifies after all Phase 00 side effects.
+      - Missing inputs remain missing or acknowledged gaps rather than generated substitutes.
+    test_refs:
+      - tests/test_phase00.py::test_phase00_raw_is_untouched
+      - tests/test_phase00.py::test_phase00_rejects_duplicate_raw_basenames
+    status: implemented

@@ -16,6 +16,7 @@ from buduunkhad.ai.providers import (
     ProviderCall,
     ProviderCredentialError,
     ProviderDependencyError,
+    ProviderExecutionError,
     ProviderImage,
     ProviderResponseError,
 )
@@ -49,6 +50,22 @@ class LiveExecutionError(RuntimeError):
     """Prepared request execution was blocked or failed safely."""
 
 
+def validate_live_request_bounds(package: RequestPackageManifest, *, config: AIConfig) -> None:
+    """Enforce request-level input limits independently from run-level request budgets."""
+
+    image_count = len(package.tile_manifest.tiles)
+    if image_count > config.max_input_images_per_request:
+        raise LiveExecutionError(
+            f"prepared request contains {image_count} images but the per-request limit is "
+            f"{config.max_input_images_per_request}"
+        )
+    if package.estimated_request_bytes > config.max_input_bytes_per_request:
+        raise LiveExecutionError(
+            f"prepared request contains {package.estimated_request_bytes} estimated input bytes "
+            f"but the per-request limit is {config.max_input_bytes_per_request}"
+        )
+
+
 def execute_request_package(
     package_directory: Path,
     *,
@@ -74,6 +91,7 @@ def execute_request_package(
     )
     if package.egress.status is not EgressDecisionStatus.APPROVED:
         raise LiveExecutionError("request package has no explicit source-egress approval")
+    validate_live_request_bounds(package, config=config)
     verify_package_source(package, roots=roots)
     run_directory = roots.run_directory(package.request.run_id)
     package_resolved = package_directory.resolve(strict=True)
@@ -167,7 +185,7 @@ def execute_request_package(
                 package.request.job_id,
                 LedgerStatus.FAILED,
                 occurred_at=datetime.now(UTC),
-                error_category=type(exc).__name__,
+                error_category=getattr(exc, "error_category", type(exc).__name__),
             )
         if isinstance(
             exc,
@@ -175,6 +193,7 @@ def execute_request_package(
                 LiveExecutionError,
                 ProviderCredentialError,
                 ProviderDependencyError,
+                ProviderExecutionError,
                 ProviderResponseError,
             ),
         ):

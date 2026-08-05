@@ -15,6 +15,8 @@ from buduunkhad.config import (
     RAW_ROOT_ENV,
     RESULTS_MIRROR_ROOT_ENV,
     RESULTS_UPLOAD_ROOT_ENV,
+    AIPhase03SourceConfig,
+    load_config,
 )
 from buduunkhad.core.qaqc import Decision, new_report
 from buduunkhad.phases.phase00_archive import Phase00Archive
@@ -57,6 +59,7 @@ def test_ai_help_is_additive_and_keeps_execution_steps_separate() -> None:
     phase03 = runner.invoke(app, ["ai", "phase03", "--help"])
     assert phase03.exit_code == 0
     assert "import-ai-draft" in phase03.stdout
+    assert "import-snapshot-source" in phase03.stdout
     assert "promote-reviewed" in phase03.stdout
     assert "run-ai-first" in phase03.stdout
 
@@ -117,7 +120,7 @@ def test_run_automatically_loads_a_sibling_ai_profile(project, monkeypatch) -> N
 
     assert result.exit_code == 0, result.output
     assert captured["ai"].enabled is True
-    assert captured["ai"].provider_model == "gpt-5.6-sol"
+    assert captured["ai"].provider_model == "gpt-5.6-terra"
     assert captured["ai"].phase03_workflow is not None
 
 
@@ -133,10 +136,73 @@ def test_run_and_single_phase_help_expose_policy_and_exact_bindings() -> None:
     assert "--phase-mode" in run_help_text
     assert "--execution-mode" in phase_help_text
     assert "--ai-config" in run_help_text
+    assert "--ai" in run_help_text
+    assert "--ai-source" in run_help_text
     assert "--authorization" in run_help_text
     assert "--authorization" in phase_help_text
     assert "Retired" in run_help_text
     assert "--upload-results" in run_help_text
+
+
+def test_multi_source_live_ai_requires_explicit_source_before_pipeline(
+    project,
+    monkeypatch,
+) -> None:
+    config, register, work = project
+    configured_ai = load_config(
+        Path("config/project.yaml"), ai_config_path=Path("config/ai.openai.yaml")
+    ).ai
+    workflow = configured_ai.phase03_workflow
+    assert workflow is not None
+    multi = workflow.model_copy(
+        update={
+            "legend_source": None,
+            "feature_source": None,
+            "sources": (
+                AIPhase03SourceConfig(
+                    source_id="regional-200k",
+                    legend_source="phase03/regional-legend.jpg",
+                    feature_source="phase03/regional-map.tif",
+                ),
+                AIPhase03SourceConfig(
+                    source_id="local-50k",
+                    legend_source="phase03/local-legend.jpg",
+                    feature_source="phase03/local-map.tif",
+                ),
+            ),
+        }
+    )
+    configured_ai = configured_ai.model_copy(update={"phase03_workflow": multi})
+    configured = config.model_copy(update={"ai": configured_ai})
+    called = False
+
+    def fake_load_project(_path, *, ai_config_path=None):  # noqa: ARG001
+        return configured, register
+
+    def fake_run_pipeline(*args, **kwargs):  # noqa: ARG001
+        nonlocal called
+        called = True
+        raise AssertionError("pipeline must not start before explicit source selection")
+
+    monkeypatch.setattr("buduunkhad.cli.load_project", fake_load_project)
+    monkeypatch.setattr("buduunkhad.cli.run_pipeline", fake_run_pipeline)
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            "--config",
+            str(work / "config" / "project.yaml"),
+            "--only",
+            "03",
+            "--ai",
+            "--ai-approved-by",
+            "Synthetic Approver",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "select each intended source with --ai-source" in result.output
+    assert called is False
 
 
 def test_cli_generic_override_fails_closed_without_creating_run(project) -> None:
@@ -310,3 +376,39 @@ def test_controlled_gate_stop_still_curates_results(project, monkeypatch) -> Non
     assert "Stopped at phase 03" in result.output
     assert "Curated results:" in result.output
     assert calls == [(manifest.run_id, True)]
+
+
+def test_phase03_live_ai_requires_explicit_run_flag(project, monkeypatch) -> None:
+    _config, _register, work = project
+    config_path = work / "config" / "project.yaml"
+    shutil.copy(Path("config/ai.openai.yaml"), config_path.with_name("ai.openai.yaml"))
+    manifest = RunManifest(
+        run_id="offline-by-default",
+        started_at="2026-08-03T00:00:00+00:00",
+        dry_run=False,
+        override=False,
+        selected_phases=["03"],
+        stopped_at="03",
+    )
+
+    monkeypatch.setattr("buduunkhad.cli.run_pipeline", lambda *args, **kwargs: manifest)
+
+    result = runner.invoke(app, ["run", "--config", str(config_path), "--only", "03"])
+
+    assert result.exit_code == 0, result.output
+    assert "AI-first Phase 03 not executed; use --ai" in result.output
+
+
+def test_phase03_live_ai_rejects_standing_environment_approver(project, monkeypatch) -> None:
+    _config, _register, work = project
+    config_path = work / "config" / "project.yaml"
+    shutil.copy(Path("config/ai.openai.yaml"), config_path.with_name("ai.openai.yaml"))
+    monkeypatch.setenv("BUDUUNKHAD_AI_EGRESS_APPROVER", "standing-approval-is-not-run-scoped")
+
+    result = runner.invoke(
+        app,
+        ["run", "--config", str(config_path), "--only", "03", "--ai"],
+    )
+
+    assert result.exit_code == 2
+    assert "requires --ai-approved-by for this exact run" in result.output

@@ -1,4 +1,4 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "01"
 requirements:
   - requirement_id: P01-SPATIAL-AUDIT-001
@@ -29,3 +29,122 @@ requirements:
     statement: AI may suggest map control evidence but cannot authoritatively georeference or accept registration.
     source_refs: [repository.methodology-contracts, phase01.guide]
     status: adopted
+implementation_coverage:
+  - coverage_id: P01-COV-SPATIAL-AUDIT-001
+    requirement_ids: [P01-SPATIAL-AUDIT-001, P01-EVIDENCE-COMPLETENESS-001]
+    master_refs:
+      - methodology.master-v9::01.Phase 1.Step-by-step methodology
+      - methodology.master-v9::01.Phase 1.QA/QC check
+    guide_refs:
+      - phase01.guide::4.Alham 2.Master inventory
+      - phase01.guide::4.Alham 6.Raster CRS and metadata QA/QC
+      - phase01.guide::4.Alham 9.QA/QC and confidence ranking
+    resolution_refs: [METH-DISC-013, METH-DISC-025, METH-DISC-055, METH-DISC-066]
+    adopted_behavior: Audit all 79 registered working copies, inspect every supported raster for CRS, dimensions, resolution, extent, nodata, band count and transform risk, and record confidence and gaps without treating a filename or overlay as acceptance evidence.
+    implementation_refs:
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._audit_rasters
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._phase1_inventory_rows
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._data_gap_rows
+    output_refs:
+      - XV-023222_Buduunkhad_Phase1_File_Inventory.xlsx
+      - XV-023222_Buduunkhad_CRS_Georeference_QAQC_Log.xlsx
+      - XV-023222_Buduunkhad_Data_Confidence_Ranking.xlsx
+      - XV-023222_Buduunkhad_Data_Gap_Register.xlsx
+    qaqc_checks:
+      - Unreadable, CRS-less, rotated or otherwise unsafe rasters fail the deterministic Phase 01 audit.
+      - Unknown or unreviewed evidence remains a gap and receives no positive scientific interpretation.
+      - Configured target CRS, native CRS and processing limitations remain distinct fields.
+    test_refs:
+      - tests/test_phase01.py::test_phase01_real_run
+      - tests/test_phase01.py::test_phase01_qaqc_fails_when_any_raster_is_unreadable
+      - tests/test_phase01.py::test_phase01_qaqc_fails_closed_on_crsless_or_rotated_raster
+    status: implemented
+  - coverage_id: P01-COV-BOUNDARY-BUFFERS-001
+    requirement_ids: [P01-BUFFER-CONTEXT-001, P01-LICENCE-QAQC-001]
+    master_refs:
+      - methodology.master-v9::01.Phase 1.Step-by-step methodology
+      - methodology.master-v9::03.Step 7A.25 km near-occurrence coverage buffer
+    guide_refs:
+      - phase01.guide::4.Alham 4.License boundary conversion
+      - phase01.guide::4.Alham 5.Buffer creation
+    resolution_refs: [METH-DISC-015, METH-DISC-018, METH-DISC-057]
+    adopted_behavior: Import the exact registered licence boundary, reproject it to EPSG:32647, generate the adopted 500 m, 1 km, 5 km, 10 km, 20 km and 25 km rings, and seal exact-source topology and measurement findings separately from human acceptance.
+    implementation_refs:
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._import_boundary_and_buffers
+      - src/buduunkhad/core/boundary_validation.py::create_boundary_validation_record
+      - src/buduunkhad/core/vector_io.py::buffer_rings
+    output_refs:
+      - XV023222_Buduunkhad_L23222_LicenseBoundary_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_Project_Buffer500m_1km_5km_10km_20km_25km_EPSG32647.gpkg
+      - XV-023222_Buduunkhad_Licence_Boundary_Validation_Record.json
+    qaqc_checks:
+      - Source and sidecar hashes match the Phase 00 working copy before and after parsing.
+      - Boundary geometry, CRS, topology, area, perimeter and requested buffer identities are deterministic.
+      - Deterministic completion remains distinct from data-custodian and qualified-reviewer acceptance.
+    test_refs:
+      - tests/test_boundary_validation.py::test_boundary_record_binds_source_derivatives_and_measurements
+      - tests/test_boundary_validation.py::test_boundary_source_mutation_after_measurement_is_detected
+      - tests/test_boundary_validation.py::test_boundary_acceptance_requires_both_exact_roles
+      - tests/test_phase01.py::test_phase01_real_run
+    status: implemented-with-review
+    remaining_work:
+      - Resolve real data-custodian and qualified-geospatial-reviewer attestations against the sealed record when scientific acceptance is required.
+  - coverage_id: P01-COV-MASTER-GIS-HANDOFF-001
+    requirement_ids: [P01-OUTPUT-CONTRACT-001]
+    master_refs:
+      - methodology.master-v9::01.Phase 1.Processing folder structure
+      - methodology.master-v9::01.Phase 1.Expected outputs
+    guide_refs:
+      - phase01.guide::4.Alham 8.Master GIS Database
+      - phase01.guide::8.Phase 1 final deliverables
+    resolution_refs: [METH-DISC-010, METH-DISC-011, METH-DISC-012, METH-DISC-014, METH-DISC-016]
+    adopted_behavior: Use the master's folder and thirteen-layer schema as authority, add the guide's useful inventory, gap, index-map, desktop-summary and Phase-2-readiness deliverables, and write a portable layered QGIS project with relative data sources.
+    implementation_refs:
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit.run
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._write_master_project
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._write_handoff_outputs
+      - src/buduunkhad/core/vector_io.py::create_master_gpkg
+      - src/buduunkhad/core/qgis_project.py::write_layered_qgz
+    output_refs:
+      - XV-023222_Buduunkhad_Master_GIS_Database.gpkg
+      - XV-023222_Buduunkhad_Master_QGIS_Project.qgz
+      - XV-023222_Buduunkhad_Phase1_Master_GIS_Index_Map.pdf
+      - XV-023222_Buduunkhad_Phase1_Desktop_Study_Summary.docx
+      - XV-023222_Buduunkhad_Phase2_Ready_Dataset_List.xlsx
+    qaqc_checks:
+      - Master GeoPackage contains exactly the adopted thirteen layers.
+      - The QGIS project opens with portable relative references to produced layers.
+      - Handoff artifacts report actual run state rather than placeholder completion claims.
+    test_refs:
+      - tests/test_phase01.py::test_phase01_real_run
+      - tests/test_phase01.py::test_phase01_dry_run_creates_schema
+      - tests/test_qgis_project.py::test_write_layered_qgz_roundtrip
+      - tests/test_qgis_project.py::test_write_layered_qgz_is_deterministic
+    status: implemented
+  - coverage_id: P01-COV-GEOREFERENCE-SCAFFOLD-001
+    requirement_ids: [P01-GEOREF-REVIEW-001, P01-AI-GCP-001]
+    master_refs:
+      - methodology.master-v9::01.Phase 1.Georeference QA/QC
+      - methodology.master-v9::Appendix E.Historical Scanned Maps QGIS Vectorization Workflow
+    guide_refs:
+      - phase01.guide::4.Alham 7.Scan map georeference
+    resolution_refs: [METH-DISC-028, METH-DISC-055, METH-DISC-066]
+    adopted_behavior: Phase 01 identifies scans, records georeference requirements and prepares QA/QC and gap structures; exact source-bound GCP, transform, residual, visual review and acceptance records are completed under Phase 03 rather than inferred or fabricated here.
+    implementation_refs:
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._phase1_inventory_rows
+      - src/buduunkhad/phases/phase01_data_audit.py::Phase01DataAudit._data_gap_rows
+      - src/buduunkhad/core/georeference.py::create_georeference_record
+    output_refs:
+      - XV-023222_Buduunkhad_CRS_Georeference_QAQC_Log.xlsx
+      - XV-023222_Buduunkhad_Data_Gap_Register.xlsx
+    qaqc_checks:
+      - Georeference-required scans remain explicitly not started until exact evidence exists.
+      - No AI suggestion, filename EPSG token or visual overlay creates an acceptance decision.
+      - Reviewer and reviewed-at fields remain empty before a real decision.
+    test_refs:
+      - tests/test_phase01.py::test_phase01_real_run
+      - tests/test_georeference.py::test_georeference_record_calculates_residuals_without_approving
+      - tests/test_georeference.py::test_two_exact_accepted_roles_resolve_georeference
+    status: implemented-with-review
+    remaining_work:
+      - Complete source-specific georeference measurements and real reviewer decisions in Phase 03 for every decision-grade scan.

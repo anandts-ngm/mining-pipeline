@@ -5,8 +5,9 @@ methodology (master workflow + the Phase-4 guide §6 **desktop scoring matrix**)
 evidence-scoring grid over the licence AOI, score each cell on the 8-criterion weighted matrix
 (geology 20 / occurrence 15 / geochem 20 / RS 15 / structure 10 / deposit-model fit 10 / access 5 /
 confidence 5 = 100), dissolve high-score cells into candidate prospect polygons, assign the legacy
-**A/B/C/D** comparator class (A>=75, B 55-74, C 35-54, D<35), wire in the Phase 03 03A
-deposit-model outputs, and emit the four deliverables. The guide's matrix is desktop-only (no
+**A/B/C/D** comparator class (A>=75, B 55-74, C 35-54, D<35), and emit the four deliverables.
+Phase 03 03A model fit remains unavailable until an exact reviewed adapter exists. The guide's
+matrix is desktop-only (no
 field/drone criteria — those belong to the v9 §5 lifecycle matrix used at Phase 10), so a
 well-evidenced desktop prospect CAN reach class A.
 
@@ -21,7 +22,7 @@ filenames, layer-name keywords, and directory proximity have no authority. Phase
 evidence remains ineligible until a separately approved authoritative integration adapter exists.
 
 **Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
-``model_fit`` until the human completes the 03A score matrix, ``access`` until a separately
+``model_fit`` until an exact reviewed 03A adapter is selected, ``access`` until a separately
 reviewed exact-role adapter admits road evidence) score **0** and are flagged as data gaps. Every
 output is stamped *"Preliminary — not ore proof"* — class A is an expert-review signal, never a
 confirmed deposit or operational decision.
@@ -241,7 +242,7 @@ class Phase04ProspectRanking(Phase):
         self._model_fit = {
             "score": 0,
             "model": DEPOSIT_MODELS[0][0],
-            "label": "pending (03A score matrix not yet completed)",
+            "label": "pending (exact reviewed 03A adapter unavailable)",
             "available": False,
         }
         self._boundary_geometries = ()
@@ -295,8 +296,10 @@ class Phase04ProspectRanking(Phase):
         for layer in vector_io.list_gpkg_layers(gpkg):
             try:
                 g = vector_io.read_layer(gpkg, layer)
-            except Exception:
-                continue
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Phase 03 evidence layer {layer!r} cannot be read for the comparator"
+                ) from exc
             if g is not None and len(g):
                 eligible = self._legacy_evidence_rows(g)
                 if len(eligible):
@@ -377,67 +380,13 @@ class Phase04ProspectRanking(Phase):
         return gdf.iloc[0:0].copy()
 
     def _load_model_fit(self, ctx: RunContext) -> None:
-        """Score guide §6.7 (deposit-model fit, 10 pts) from the Phase 03 03A score matrix.
+        """Keep model fit unavailable until an exact reviewed 03A adapter is selected."""
 
-        The 03A matrix (criterion x 6 models + a Total row) is a human-completed artifact. When
-        the human has filled numeric scores, the best model's total maps onto the §6.7 band
-        (via the 03A confidence thresholds: >=70 -> 10, 50-69 -> 7, 30-49 -> 4, else 1) and names
-        ``dominant_deposit_model``; while it is still an empty template, model_fit scores 0 and is
-        recorded as a pending data gap.
-        """
-        matrices = sorted(
-            (ctx.phase_dir("03") / "10_Preliminary_Deposit_Model_03A").glob(
-                "*deposit_model_candidate_score_matrix*.xlsx"
-            )
+        del ctx
+        self._notes.append(
+            "03A model fit excluded: a workbook filename does not establish reviewed evidence "
+            "authority; the legacy comparator has no exact 03A adapter."
         )
-        if not matrices:
-            return
-        try:
-            import openpyxl
-
-            ws = openpyxl.load_workbook(matrices[0]).active
-            if ws is None:
-                return
-            rows = list(ws.iter_rows(values_only=True))
-        except Exception:
-            return
-        if not rows:
-            return
-        header = [str(c) for c in rows[0]]
-        model_cols = [
-            i for i, h in enumerate(header) if h not in ("criterion", "max_points", "None")
-        ]
-        total_row = next((r for r in rows[1:] if str(r[0]).strip().lower() == "total"), None)
-        best_score, best_model = 0.0, ""
-        source = [total_row] if total_row is not None else rows[1:]
-        for i in model_cols:
-            vals = []
-            for r in source:
-                try:
-                    vals.append(float(str(r[i])))
-                except (TypeError, ValueError):
-                    continue
-            if not vals:
-                continue
-            score = vals[0] if total_row is not None else sum(vals)
-            if score > best_score:
-                best_score, best_model = score, header[i]
-        if best_score <= 0:
-            return  # template still empty -> stays pending
-        if best_score >= 70:
-            pts, label = 10, "High priority model"
-        elif best_score >= 50:
-            pts, label = 7, "Moderate priority model"
-        elif best_score >= 30:
-            pts, label = 4, "Low / conceptual model"
-        else:
-            pts, label = 1, "Insufficient evidence"
-        self._model_fit = {
-            "score": pts,
-            "model": best_model,
-            "label": f"{label} ({best_score:.0f}/100 in 03A)",
-            "available": True,
-        }
 
     # ------------------------------------------------------------------ #
     # scoring + delineation
@@ -824,7 +773,7 @@ class Phase04ProspectRanking(Phase):
                 "acquired_in_phase": {
                     "rs": "02 (ASTER/Sentinel — external SNAP/ILWIS) or ingested alteration layer",
                     "geochem": "ingested geochem-anomaly polygons (attribute evidence)",
-                    "model_fit": "03 (human completes the 03A deposit-model score matrix)",
+                    "model_fit": "03 (exact reviewed 03A adapter required)",
                     "access": "separately admitted exact-role road evidence / field recon",
                 }.get(k, "—"),
                 "note": ""
@@ -988,8 +937,8 @@ class Phase04ProspectRanking(Phase):
             f"Regional chlorite-epidote propylitic halo is excluded as context (it blankets the "
             f"district).\n\n"
             f"## Data gaps (scored 0)\n"
-            f"`rs` without fed focused alteration; `model_fit` until the 03A score matrix is "
-            f"human-completed; `access` until a separately reviewed exact-role adapter admits "
+            f"`rs` without fed focused alteration; `model_fit` until an exact reviewed 03A "
+            f"adapter is selected; `access` until a separately reviewed exact-role adapter admits "
             f"authoritative road evidence. `confidence` (5) grades evidence completeness. "
             f"Field/pXRF/drone evidence enters at Phases 05-06 and is scored by the v9 §5 "
             f"lifecycle matrix at Phase 10.\n\n"
@@ -1053,7 +1002,7 @@ class Phase04ProspectRanking(Phase):
             note=f"Data-gap register lists {len(self._data_gaps)} desktop-unavailable criterion(s).",
         )
         report.add(
-            "Deposit-model score wired from Phase 03 (03A) — guide §6.7",
+            "Exact reviewed Phase 03 03A adapter wired — guide §6.7",
             RECORDED_ACCEPTANCE,
             decision=Decision.PASS
             if (self._model_wired and self._model_fit["available"])

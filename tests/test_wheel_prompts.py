@@ -130,6 +130,9 @@ prompt = registry.get("fixture.document-extraction", "1.0.0")
 critic = registry.get("fixture.feature-critique", "1.0.0")
 vertical = registry.get("vertical.geological-feature-proposal", "1.0.0")
 authority = load_authority_registry()
+phase00 = load_phase_methodology("00")
+phase01 = load_phase_methodology("01")
+phase02 = load_phase_methodology("02")
 phase05 = load_phase_methodology("05")
 phase03 = load_phase_methodology("03")
 phase04 = load_phase_methodology("04")
@@ -142,6 +145,10 @@ assert prompt.components[0].text
 assert critic.components[0].text
 assert vertical.components[0].text
 assert authority.sources
+assert all(
+    phase.format_version == "1.1.0" and phase.implementation_coverage
+    for phase in (phase00, phase01, phase02)
+)
 assert phase05.phase_id == "05"
 assert buduunkhad.__version__ == "0.8.1"
 assert BOUNDARY_VALIDATION_FORMAT_VERSION == "1.0.0"
@@ -152,8 +159,8 @@ assert PHASE03_HANDOFF_FORMAT_VERSION == "1.0.0"
 assert PHASE04_RESULT_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_MANIFEST_FORMAT_VERSION == "1.0.0"
 assert EVIDENCE_CATALOG_FORMAT_VERSION == "1.0.0"
-assert RUN_MANIFEST_FORMAT_VERSION == "2.2.0"
-assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0", "2.2.0"}}
+assert RUN_MANIFEST_FORMAT_VERSION == "2.3.0"
+assert SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS == {{"2.0.0", "2.1.0", "2.2.0", "2.3.0"}}
 assert PUBLICATION_MANIFEST_FORMAT_VERSION == "1.2.0"
 assert execution_policy.phase_policies[4].default_real_mode is ExecutionMode.LEGACY_COMPARATOR
 assert len(execution_policy.pending_source_gate_rules) == 1
@@ -168,12 +175,12 @@ binding = SourcePhaseBinding(
 assert binding.phase_id == "00"
 assert "P03-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase03.requirements}}
 assert "P04-EVIDENCE-AUTHORITY-001" in {{item.requirement_id for item in phase04.requirements}}
-assert len(discrepancies.discrepancies) == 72
+assert len(discrepancies.discrepancies) == 75
 assert any(
     item.discrepancy_id == "METH-DISC-033"
     for item in discrepancies.discrepancies
 )
-assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-072"
+assert discrepancies.discrepancies[-1].discrepancy_id == "METH-DISC-075"
 assert len(discrepancies.unresolved()) == 0
 assert len(discrepancies.historical_unresolved()) == 23
 assert len(readiness.obligations) == 7

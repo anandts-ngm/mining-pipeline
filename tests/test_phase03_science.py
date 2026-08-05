@@ -27,8 +27,11 @@ from buduunkhad.core.georeference import (
     write_georeference_record,
 )
 from buduunkhad.core.phase03_science import (
+    DEPOSIT_MODEL_SCORING_CRITERIA,
     CritiqueConclusion,
     CritiqueOrigin,
+    DepositModelAssessment,
+    DepositModelCriterionScore,
     DepositModelEvidenceGroup,
     EvidenceRelationship,
     Phase03ScienceError,
@@ -36,8 +39,10 @@ from buduunkhad.core.phase03_science import (
     create_deposit_model_assessment,
     create_deposit_model_critique,
     create_deposit_model_review,
+    load_deposit_model_assessment,
     load_phase03_scientific_handoff,
     resolve_phase03_scientific_handoff,
+    write_deposit_model_assessment_workbook,
     write_phase03_science_record,
 )
 from buduunkhad.core.run_storage import ResolvedSourcePhase, SourcePhaseBinding
@@ -136,6 +141,39 @@ def _groups(resolved: tuple[ResolvedEvidence, ...]) -> tuple[DepositModelEvidenc
     )
 
 
+def _criterion_scores(
+    resolved: tuple[ResolvedEvidence, ...],
+) -> tuple[DepositModelCriterionScore, ...]:
+    evidence_by_role = {item.record.evidence_role: item.record.evidence_id for item in resolved}
+    assignments = {
+        "favorable-geology": (EvidenceRole.GEOLOGY, 15.0),
+        "structure-contact": (EvidenceRole.STRUCTURE, 10.0),
+        "known-occurrence": (EvidenceRole.OCCURRENCE, 12.0),
+        "remote-sensing-alteration": (EvidenceRole.ALTERATION_SUPPORT, 8.0),
+    }
+    scores = []
+    for criterion_id, criterion, maximum in DEPOSIT_MODEL_SCORING_CRITERIA:
+        assignment = assignments.get(criterion_id)
+        evidence_id = evidence_by_role.get(assignment[0]) if assignment else None
+        points = assignment[1] if assignment and evidence_id else 0.0
+        scores.append(
+            DepositModelCriterionScore(
+                criterion_id=criterion_id,
+                criterion=criterion,
+                max_points=maximum,
+                proposed_points=points,
+                evidence_ids=(evidence_id,) if evidence_id else (),
+                rationale=(
+                    "Exact accepted evidence supports a preliminary partial score."
+                    if evidence_id
+                    else "No accepted evidence was selected for this criterion."
+                ),
+                missing=evidence_id is None,
+            )
+        )
+    return tuple(scores)
+
+
 def _model_chain(tmp_path: Path, resolved: tuple[ResolvedEvidence, ...]):
     assessment = create_deposit_model_assessment(
         phase03_run_id="phase03-run",
@@ -147,6 +185,7 @@ def _model_chain(tmp_path: Path, resolved: tuple[ResolvedEvidence, ...]):
         confidence_basis="Multiple independent accepted evidence roles.",
         limitations=("Desktop interpretation is not proof of mineralization.",),
         recommended_validation=("Qualified field validation",),
+        criterion_scores=_criterion_scores(resolved),
         proposing_job_id="proposal-job",
         proposing_response_id="proposal-response",
     )
@@ -187,6 +226,23 @@ def test_model_chain_separates_proposal_critique_and_geologist_decision(tmp_path
     assert assessment_path.is_file()
     assert critique_path.is_file()
     assert review_path.is_file()
+    assessment = load_deposit_model_assessment(assessment_path)
+    assert assessment.format_version == "1.1.0"
+    assert len(assessment.criterion_scores) == 8
+    assert assessment.draft_score == 45
+    workbook_path = tmp_path / "assessment.xlsx"
+    write_deposit_model_assessment_workbook(assessment, workbook_path)
+    import openpyxl
+
+    workbook = openpyxl.load_workbook(workbook_path, read_only=True)
+    assert workbook.sheetnames == [
+        "Assessment",
+        "Criterion Scores",
+        "Evidence Groups",
+        "Gaps and Validation",
+    ]
+    score_sheet = workbook["Criterion Scores"]
+    assert score_sheet.max_row == 10
     with pytest.raises(Phase03ScienceError, match="separate job identity"):
         create_deposit_model_critique(
             assessment_path,
@@ -198,6 +254,24 @@ def test_model_chain_separates_proposal_critique_and_geologist_decision(tmp_path
             conclusion=CritiqueConclusion.SUPPORTED,
             findings=("No new finding.",),
         )
+
+
+def test_legacy_deposit_model_assessment_remains_readable(tmp_path: Path) -> None:
+    resolved = _resolved_evidence(tmp_path)
+    assessment_path, _critique_path, _review_path = _model_chain(tmp_path, resolved)
+    current = load_deposit_model_assessment(assessment_path)
+    values = current.model_dump(
+        mode="python",
+        exclude={"assessment_id", "criterion_scores"},
+    )
+    values["format_version"] = "1.0.0"
+    legacy = DepositModelAssessment.create(**values)
+    legacy_path = tmp_path / "legacy-assessment.json"
+    write_phase03_science_record(legacy, legacy_path)
+
+    loaded = load_deposit_model_assessment(legacy_path)
+    assert loaded.format_version == "1.0.0"
+    assert loaded.criterion_scores == ()
 
 
 def test_phase03_handoff_resolves_exact_reviews_and_required_roles(
@@ -340,4 +414,22 @@ def test_model_assessment_rejects_double_counted_evidence(tmp_path: Path) -> Non
             confidence_basis="reviewed",
             limitations=("support evidence only",),
             recommended_validation=("field validation",),
+            criterion_scores=_criterion_scores(resolved),
+        )
+
+
+def test_model_assessment_requires_exact_eight_criterion_rubric(tmp_path: Path) -> None:
+    resolved = _resolved_evidence(tmp_path)
+    with pytest.raises(ValueError, match="exact eight-criterion rubric"):
+        create_deposit_model_assessment(
+            phase03_run_id="phase03-run",
+            resolver=_Resolver(resolved),
+            evidence_manifest_ids=("a" * 64,),
+            candidate_model="Porphyry Cu-Au",
+            evidence_groups=_groups(resolved),
+            missing_evidence=("Field confirmation",),
+            confidence_basis="reviewed",
+            limitations=("support evidence only",),
+            recommended_validation=("field validation",),
+            criterion_scores=_criterion_scores(resolved)[:-1],
         )

@@ -35,10 +35,11 @@ from buduunkhad.core.run_artifacts import (
     sha256_file,
 )
 
-RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.2.0"
+RUN_MANIFEST_FORMAT_VERSION: Final[str] = "2.3.0"
 SUPPORTED_RUN_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset(
-    {"2.0.0", "2.1.0", "2.2.0"}
+    {"2.0.0", "2.1.0", "2.2.0", "2.3.0"}
 )
+POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({"2.2.0", "2.3.0"})
 RUN_LAYOUT_VERSION: Final[str] = "run-isolated-v1"
 CURRENT_VIEW_FILENAME: Final[str] = ".buduunkhad-current-view.json"
 _RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -247,7 +248,9 @@ class ProjectExecutionLock(AbstractContextManager["ProjectExecutionLock"]):
             with suppress(OSError):
                 owner = self.path.read_text(encoding="utf-8")
             raise ExecutionLockError(
-                f"another pipeline run owns the project execution lock: {owner}"
+                "another pipeline run owns the project execution lock: "
+                f"{owner}. If that process was terminated, verify its recorded PID is no longer "
+                f"running, then remove only this stale lock file before retrying: {self.path}"
             ) from exc
         try:
             os.write(descriptor, payload)
@@ -434,6 +437,28 @@ def resolve_source_phase(
         raise RunStorageError("source run layout is unsupported")
     if data.get("run_id") != run_id or layout.run_dir.name != run_id:
         raise RunStorageError("source run manifest identity does not match its directory")
+    execution_identity = data.get("execution_identity")
+    if not isinstance(execution_identity, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in execution_identity.items()
+    ):
+        raise RunStorageError("source run execution identity is malformed")
+    execution_environment = data.get("execution_environment")
+    if manifest_version == "2.3.0":
+        if (
+            not isinstance(execution_environment, dict)
+            or not execution_environment
+            or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in execution_environment.items()
+            )
+        ):
+            raise RunStorageError("source run execution environment is malformed")
+        if execution_identity.get("environment_sha256") != _sha256_json_value(
+            execution_environment
+        ):
+            raise RunStorageError("source run execution-environment identity is inconsistent")
+    elif execution_environment is not None:
+        raise RunStorageError("legacy source run cannot claim an execution environment")
     started = _aware_datetime(data.get("started_at"), "source run started_at")
     finished = _aware_datetime(data.get("finished_at"), "source run finished_at")
     if finished < started:
@@ -462,7 +487,7 @@ def resolve_source_phase(
     policy_modes: dict[str, ExecutionMode] = {}
     authorization_map: dict[str, ExecutionAuthorization] = {}
     used_authorization_ids: set[str] = set()
-    if manifest_version == "2.2.0":
+    if manifest_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS:
         try:
             policy_binding = ExecutionPolicyBinding.model_validate(data.get("execution_policy"))
             raw_authorizations = data.get("authorizations")
@@ -520,7 +545,7 @@ def resolve_source_phase(
     if phase.get("status") != "ok" or phase.get("error") != "":
         raise RunStorageError(f"source Phase {phase_id} did not complete successfully")
     recorded_mode = phase.get("execution_mode")
-    if manifest_version == "2.2.0":
+    if manifest_version in POLICY_BOUND_RUN_MANIFEST_FORMAT_VERSIONS:
         try:
             execution_mode = ExecutionMode(recorded_mode)
         except (TypeError, ValueError) as exc:
