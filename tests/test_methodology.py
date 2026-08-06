@@ -754,7 +754,15 @@ def test_readme_describes_current_phase_maturity_and_authority_location() -> Non
         for path in tracked
         if Path(path).suffix.casefold() in {".md", ".markdown", ".mdown", ".mdwn"}
     )
-    assert tracked_markdown == ["AGENTS.md"]
+    # AGENTS.md plus the byte-pinned methodology mirrors, and nothing else. Listing the
+    # mirrors from the policy catalog rather than by name means a markdown file can only
+    # become tracked by first being registered and hash-pinned.
+    pinned_markdown = sorted(
+        path.as_posix()
+        for path in APPROVED_METHODOLOGY_DOCUMENTS
+        if path.suffix.casefold() == ".md"
+    )
+    assert tracked_markdown == sorted(["AGENTS.md", *pinned_markdown])
     assert "docs/methodology/" in readme
 
 

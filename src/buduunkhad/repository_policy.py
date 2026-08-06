@@ -159,7 +159,7 @@ APPROVED_SYNTHETIC_FIXTURES: Mapping[PurePosixPath, str] = MappingProxyType({})
 
 # Reviewed methodology sources are the only approved production-document artifacts. Each
 # exception binds one repository path to the exact source bytes reviewed on 2026-07-20.
-# The master and Phase 01-04 mirrors are markdown conversions rather than DOCX: markdown is
+# The master and Phase 01-05 mirrors are markdown conversions rather than DOCX: markdown is
 # directly parseable by the pipeline, and each conversion was verified to carry the whole
 # vocabulary of the DOCX it replaced. Markdown needs no artifact exception of its own, but
 # the mirrors stay pinned here so the byte-binding survives the format change.
@@ -185,8 +185,8 @@ APPROVED_METHODOLOGY_DOCUMENTS: Mapping[PurePosixPath, str] = MappingProxyType(
             "Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx.md"
         ): "837472748a4a8caadfe93499f6ebdd8620766b9d9021a9b56458b68fcc46d5a6",
         PurePosixPath(
-            "docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx"
-        ): "f1add3a2c229224454ff1624f70602f2592ad2240b23f45be3d5744c07700ade",
+            "docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx.md"
+        ): "bc86aea413c2507f1e1e0c1a8cd25c2a8825ab528cb62cbaa5e39e516657f963",
         PurePosixPath(
             "docs/methodology/phase_06/"
             "Phase_6_Recon_Mapping_and_pXRF_Field_Screening_Detailed_Guide_MN.docx"

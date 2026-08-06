@@ -133,9 +133,9 @@ sources:
     role: phase-source
     authority_status: reference-only
     expected_document: Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
-    repository_copy: docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx
-    repository_copy_sha256: f1add3a2c229224454ff1624f70602f2592ad2240b23f45be3d5744c07700ade
-    repository_copy_size_bytes: 155330
+    repository_copy: docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx.md
+    repository_copy_sha256: bc86aea413c2507f1e1e0c1a8cd25c2a8825ab528cb62cbaa5e39e516657f963
+    repository_copy_size_bytes: 33544
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 13RbcciT0bvK5HqT05JFqiTUf92QViVMm
     existence_verified: true
