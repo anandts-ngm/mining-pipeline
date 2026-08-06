@@ -15,9 +15,9 @@ sources:
     role: methodology-source
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
-    repository_copy: docs/methodology/master/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx
-    repository_copy_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e
-    repository_copy_size_bytes: 150944
+    repository_copy: docs/methodology/master/XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_Clickable_TOC_PageNumbers.docx.md
+    repository_copy_sha256: ea4493c405f8b27af8fd3e627d7004c3743c5e96137b8dd13eaa9ccdbdb7fa7c
+    repository_copy_size_bytes: 303412
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1ECwfhr6ucFRE8LABo0C9WDzUDOE6oHzb
     existence_verified: true
@@ -40,9 +40,9 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: XV-023222_Buduunkhad_Phase1_Methodology.docx
-    repository_copy: docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx
-    repository_copy_sha256: 99bb2d59fc649701c9aa5656e40fc7c2a220ab6ccfe2a343c0a1831d40123349
-    repository_copy_size_bytes: 24195
+    repository_copy: docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx.md
+    repository_copy_sha256: 535655ff469eca6f902c7dd79a86f56dd862f5234d3c29d4349de13829fbe82a
+    repository_copy_size_bytes: 23058
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1Ff9rAshnm1kihhh3uOxz6N5Kh6rUFX8Z
     existence_verified: true
@@ -54,9 +54,9 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
-    repository_copy: docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx
-    repository_copy_sha256: 77d194c1914b463486bda553e0303d865b0742e5847a81d4e9da85abea4590f2
-    repository_copy_size_bytes: 37882
+    repository_copy: docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx.md
+    repository_copy_sha256: da12cb24944acb60c3576cd6e070a41992be1e3f3b8c0f945331e65b1958abde
+    repository_copy_size_bytes: 28963
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1bFjeFQz2BWzrOP38oPMutlh-nSBw3QLD
     existence_verified: true
@@ -105,9 +105,9 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
-    repository_copy: docs/methodology/phase_03/Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx
-    repository_copy_sha256: deceebe736db6dcd70500204a5e30391b6992d7973633afb8abdc4016aff8b49
-    repository_copy_size_bytes: 30322
+    repository_copy: docs/methodology/phase_03/Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx.md
+    repository_copy_sha256: 850df54b1bb36b0aaf0521374659409bebd0b9fa5da4d56ffd1f1206139f9c55
+    repository_copy_size_bytes: 19000
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1Ttxau5QEOkCc1LbrCuS8jA9wV3JPaLyl
     existence_verified: true
@@ -119,9 +119,9 @@ sources:
     role: phase-source
     authority_status: adopted
     expected_document: Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
-    repository_copy: docs/methodology/phase_04/Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx
-    repository_copy_sha256: b73044d954e625c7c3c65a6042e378bfdb479f58d13be6c4120912c092f4b003
-    repository_copy_size_bytes: 50969
+    repository_copy: docs/methodology/phase_04/Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx.md
+    repository_copy_sha256: 837472748a4a8caadfe93499f6ebdd8620766b9d9021a9b56458b68fcc46d5a6
+    repository_copy_size_bytes: 25069
     repository_snapshot_sha256: 05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     external_file_id: 1er5vXLXDX9_s4paZC81xDxbB8mU6UR3e
     existence_verified: true

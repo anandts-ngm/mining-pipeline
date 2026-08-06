@@ -20,10 +20,10 @@ def test_master_first_readiness_report_is_deterministic_and_truthful() -> None:
     second = build_methodology_readiness_report(manifest)
     assert first == second
     assert render_methodology_readiness_report(first) == render_methodology_readiness_report(second)
-    assert first.discrepancy_total == 76
+    assert first.discrepancy_total == 77
     assert first.unresolved_count == 0
     assert first.historical_unresolved_record_count == 23
-    assert first.resolved_count == 51
+    assert first.resolved_count == 52
     assert len(first.obligations) == 7
     assert all(obligation.affected_phases for obligation in first.obligations)
     assert all(obligation.required_evidence for obligation in first.obligations)

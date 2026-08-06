@@ -159,27 +159,31 @@ APPROVED_SYNTHETIC_FIXTURES: Mapping[PurePosixPath, str] = MappingProxyType({})
 
 # Reviewed methodology sources are the only approved production-document artifacts. Each
 # exception binds one repository path to the exact source bytes reviewed on 2026-07-20.
+# The master and Phase 01-04 mirrors are markdown conversions rather than DOCX: markdown is
+# directly parseable by the pipeline, and each conversion was verified to carry the whole
+# vocabulary of the DOCX it replaced. Markdown needs no artifact exception of its own, but
+# the mirrors stay pinned here so the byte-binding survives the format change.
 APPROVED_METHODOLOGY_DOCUMENTS: Mapping[PurePosixPath, str] = MappingProxyType(
     {
         PurePosixPath(
             "docs/methodology/master/"
             "XV-023222_Buduunkhad_Exploration_Workflow_Methodology_78Inputs_v9_25km_"
-            "Clickable_TOC_PageNumbers.docx"
-        ): "86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e",
+            "Clickable_TOC_PageNumbers.docx.md"
+        ): "ea4493c405f8b27af8fd3e627d7004c3743c5e96137b8dd13eaa9ccdbdb7fa7c",
         PurePosixPath(
-            "docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx"
-        ): "99bb2d59fc649701c9aa5656e40fc7c2a220ab6ccfe2a343c0a1831d40123349",
+            "docs/methodology/phase_01/XV-023222_Buduunkhad_Phase1_Methodology.docx.md"
+        ): "535655ff469eca6f902c7dd79a86f56dd862f5234d3c29d4349de13829fbe82a",
         PurePosixPath(
-            "docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx"
-        ): "77d194c1914b463486bda553e0303d865b0742e5847a81d4e9da85abea4590f2",
+            "docs/methodology/phase_02/Phase_2_Remote_Sensing_Preprocessing_Guide_MN.docx.md"
+        ): "da12cb24944acb60c3576cd6e070a41992be1e3f3b8c0f945331e65b1958abde",
         PurePosixPath(
             "docs/methodology/phase_03/"
-            "Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx"
-        ): "deceebe736db6dcd70500204a5e30391b6992d7973633afb8abdc4016aff8b49",
+            "Phase_3_Geological_Metallogenic_and_CMCS_Synthesis_Guide_MN.docx.md"
+        ): "850df54b1bb36b0aaf0521374659409bebd0b9fa5da4d56ffd1f1206139f9c55",
         PurePosixPath(
             "docs/methodology/phase_04/"
-            "Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx"
-        ): "b73044d954e625c7c3c65a6042e378bfdb479f58d13be6c4120912c092f4b003",
+            "Phase_4_Preliminary_Prospect_Delineation_and_Ranking_Guide_MN.docx.md"
+        ): "837472748a4a8caadfe93499f6ebdd8620766b9d9021a9b56458b68fcc46d5a6",
         PurePosixPath(
             "docs/methodology/phase_05/Phase_5_Drone_LiDAR_Photogrammetry_Detailed_Guide_MN.docx"
         ): "f1add3a2c229224454ff1624f70602f2592ad2240b23f45be3d5744c07700ade",
@@ -278,6 +282,13 @@ def artifact_violations(
     violations: list[str] = []
     for path in paths:
         if is_exact_approved_artifact(repository_root, path):
+            continue
+        if path in APPROVED_METHODOLOGY_DOCUMENTS or path in APPROVED_SYNTHETIC_FIXTURES:
+            # Reaching here means a pinned path exists but its bytes no longer match the
+            # reviewed hash. Flag it whatever the suffix: a markdown mirror carries no
+            # forbidden extension, so without this the pin would only bind formats that are
+            # prohibited by default and a tampered conversion would pass unnoticed.
+            violations.append(str(path))
             continue
         parts = {part.casefold() for part in path.parts}
         name = path.name.casefold()

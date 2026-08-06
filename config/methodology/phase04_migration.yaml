@@ -1,7 +1,7 @@
 format_version: 1.1.0
 phase_id: "04"
 authority_source: methodology.master-v9
-authority_sha256: 86ab7c8926aeccf032835c1b1ba9a00518740cdfaea2a1ad01313e4bfcb3b65e
+authority_sha256: ea4493c405f8b27af8fd3e627d7004c3743c5e96137b8dd13eaa9ccdbdb7fa7c
 scoring_source: phase04.guide
 class_band_source: methodology.master-v9
 decision_sources: [METH-DISC-060, METH-DISC-068, METH-DISC-076]

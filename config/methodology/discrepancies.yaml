@@ -1223,3 +1223,20 @@ discrepancies:
     effective_version: methodology-contracts-v1.6.0
     implementation_evidence: AGENTS.md execution policy; execution_policy.yaml v1.1.0; automation_readiness.yaml owner-accepted Phase 00-04 obligations; automated pending-data-gap runner policy; publication-mode tests.
     related_discrepancy_ids: [METH-DISC-003, METH-DISC-031, METH-DISC-040, METH-DISC-041, METH-DISC-060, METH-DISC-062, METH-DISC-067, METH-DISC-068, METH-DISC-072]
+  - discrepancy_id: METH-DISC-077
+    subject: methodology-mirror-format-markdown
+    compared_sources:
+      - config/methodology/authority.yaml
+      - src/buduunkhad/repository_policy.py
+      - docs/methodology
+      - AGENTS.md
+    statement: The master and Phase 01-04 repository mirrors were byte-pinned DOCX, which the engine cannot read without a document library, while the same content is directly parseable as markdown.
+    operational_impact: Changing mirror format must not weaken byte-binding, silently drop document content, or leave the registry pointing at a file that no longer exists.
+    status: resolved
+    resolution: Replace the master and Phase 01-04 DOCX mirrors with markdown conversions of the same documents, repin authority.yaml and the repository policy catalog to the markdown paths, hashes and sizes, and permit the byte-pinned methodology mirrors as tracked Markdown alongside AGENTS.md.
+    rationale: Each conversion was verified before its DOCX was deleted by comparing the full extracted vocabulary of the DOCX, paragraphs and table cells alike, against the markdown; coverage was 100.0 percent for the master, Phase 01 and Phase 04 and 99.8 percent for Phase 02 and Phase 03, the residual terms being Mongolian suffixed word forms that tokenise differently rather than absent content. The external DOCX named in expected_document remains the owner-held authority; only the repository mirror format changed.
+    approver: repository-owner directive
+    resolved_on: "2026-08-06"
+    effective_version: methodology-contracts-v1.6.0
+    implementation_evidence: authority.yaml repository_copy entries for methodology.master-v9 and phase01-phase04 guides; APPROVED_METHODOLOGY_DOCUMENTS markdown pins; repository policy and methodology mirror tests.
+    related_discrepancy_ids: [METH-DISC-075]

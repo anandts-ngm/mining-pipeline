@@ -10,7 +10,8 @@ planning documents, or placeholder artifacts.
 Use the byte-bound master methodology registered in `config/methodology/authority.yaml` as the
 workflow authority. Use the individual phase documents to add compatible operational detail. If
 they conflict, follow the master. Keep durable machine-readable decisions in the existing YAML,
-JSON, CSV, or Python contracts; `AGENTS.md` remains the only tracked Markdown file.
+JSON, CSV, or Python contracts. `AGENTS.md` and the byte-pinned methodology mirrors under
+`docs/methodology` are the only tracked Markdown files; do not add others.
 
 ## Autonomy
 

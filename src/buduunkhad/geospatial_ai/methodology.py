@@ -98,8 +98,18 @@ class MethodologySource(BaseModel):
                 raise ValueError(
                     "repository_copy must be a canonical relative path below docs/methodology"
                 )
-            if self.expected_document is None or copy_path.name != self.expected_document:
-                raise ValueError("repository_copy filename must match expected_document")
+            # The mirror is either the expected document itself or a markdown conversion of
+            # it, named "<expected document>.md". Keeping the original filename inside the
+            # mirror's name is what lets a converted copy still be traced to the exact
+            # owner-held source document named by expected_document.
+            if self.expected_document is None or copy_path.name not in (
+                self.expected_document,
+                f"{self.expected_document}.md",
+            ):
+                raise ValueError(
+                    "repository_copy filename must match expected_document, "
+                    "optionally with a .md conversion suffix"
+                )
         verification_facts = (
             self.existence_verified_at,
             self.existence_verified_by,
