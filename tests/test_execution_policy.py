@@ -44,16 +44,16 @@ def test_execution_policy_covers_every_registered_phase_and_current_boundaries()
     assert tuple(by_phase) == tuple(f"{value:02d}" for value in range(12)) + ("99",)
     assert all(
         by_phase[phase].default_real_mode is ExecutionMode.AUTOMATED
-        for phase in ("00", "01", "02", "03", "04")
+        for phase in ("00", "01", "02", "03", "04", "05")
     )
-    assert all(by_phase[phase].default_real_mode is None for phase in (*by_phase.keys(),)[5:])
+    assert all(by_phase[phase].default_real_mode is None for phase in (*by_phase.keys(),)[6:])
     assert {
         phase_id: tuple(
             readiness for block in policy.blocked_modes for readiness in block.readiness_ids
         )
         for phase_id, policy in by_phase.items()
         if policy.blocked_modes
-    } == {"05": ("METH-READY-001",)}
+    } == {}
     assert not registry.operational_exception_controls
     assert not registry.pending_source_gate_rules
     assert set(registry.publication_policy.approved_source_modes) == {
@@ -62,15 +62,19 @@ def test_execution_policy_covers_every_registered_phase_and_current_boundaries()
     }
 
 
-def test_policy_rejects_unimplemented_authoritative_and_parked_real_modes() -> None:
+def test_policy_rejects_unimplemented_authoritative_modes() -> None:
     with pytest.raises(ExecutionPolicyError, match="does not implement authoritative"):
         resolve_execution_policy(
             ["03"],
             dry_run=False,
             requested_modes={"03": ExecutionMode.AUTHORITATIVE},
         )
-    with pytest.raises(ExecutionPolicyError, match="Phase 05 has no real execution mode"):
-        resolve_execution_policy(["05"], dry_run=False)
+    with pytest.raises(ExecutionPolicyError, match="does not implement authoritative"):
+        resolve_execution_policy(
+            ["05"],
+            dry_run=False,
+            requested_modes={"05": ExecutionMode.AUTHORITATIVE},
+        )
 
 
 def test_dry_run_is_scaffold_only() -> None:

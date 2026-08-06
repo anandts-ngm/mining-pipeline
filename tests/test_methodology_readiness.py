@@ -59,8 +59,8 @@ def test_readiness_report_groups_open_obligations_by_phase() -> None:
     assert phases["03"].implementation_status == "automated"
     assert phases["03"].status == "conditional-data-gaps"
     assert "METH-READY-001" in phases["05"].obligation_ids
-    assert phases["05"].implementation_status == "stub"
-    assert phases["05"].status == "parked"
+    assert phases["05"].implementation_status == "partially-implemented"
+    assert phases["05"].status == "conditional-data-gaps"
     assert phases["04"].implementation_status == "automated"
     assert phases["06"].implementation_status == "stub"
     assert phases["06"].status == "no-open-operational-obligations"

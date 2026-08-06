@@ -739,7 +739,7 @@ def test_phase_coverage_cannot_adopt_obsolete_guide_detail(tmp_path: Path) -> No
 def test_readme_describes_current_phase_maturity_and_authority_location() -> None:
     repository_root = Path(__file__).resolve().parents[1]
     readme = (repository_root / "README.txt").read_text(encoding="utf-8")
-    assert "Phases 00-04 have substantial automated implementations." in readme
+    assert "Phases 00-05 have automated output-producing implementations." in readme
     assert "review-only pending rows do not stop automated Phase 00-04" in readme
     assert "legacy-comparator` execution mode is retained only for regression" in readme
     assert "deterministic end-to-end implementations" not in readme
@@ -776,6 +776,10 @@ def test_automation_boundaries_cover_every_phase_without_maturity_estimates() ->
     assert implemented == {"00", "01", "02"}
     assert next(item for item in registry.boundaries if item.phase_id == "03").status == "automated"
     assert next(item for item in registry.boundaries if item.phase_id == "04").status == "automated"
+    assert (
+        next(item for item in registry.boundaries if item.phase_id == "05").status
+        == "partially-implemented"
+    )
     for item in registry.boundaries:
         assert item.deterministic_authority
         assert item.human_review_boundary
@@ -828,7 +832,8 @@ def test_operational_readiness_preserves_real_evidence_and_owner_accepted_gaps()
     registry = load_automation_readiness()
     by_id = {item.obligation_id: item for item in registry.obligations}
     assert set(by_id) == {f"METH-READY-{number:03d}" for number in range(1, 8)}
-    assert by_id["METH-READY-001"].status == "parked"
+    assert by_id["METH-READY-001"].status == "owner-accepted"
+    assert not by_id["METH-READY-001"].blocks_phase_completion
     assert by_id["METH-READY-002"].status == "excluded"
     assert not by_id["METH-READY-002"].blocks_phase_completion
     assert by_id["METH-READY-004"].status == "owner-accepted"

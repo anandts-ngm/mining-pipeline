@@ -41,6 +41,8 @@ WORK_ROOT_ENV = "BUDUUNKHAD_WORK_ROOT"
 RESULTS_ROOT_ENV = "BUDUUNKHAD_RESULTS_ROOT"
 RESULTS_MIRROR_ROOT_ENV = "BUDUUNKHAD_RESULTS_MIRROR_ROOT"
 RESULTS_UPLOAD_ROOT_ENV = "BUDUUNKHAD_RESULTS_UPLOAD_ROOT"
+#: Read-only root containing the acquired Phase 05 drone/LiDAR campaign.
+PHASE05_SOURCE_ROOT_ENV = "BUDUUNKHAD_PHASE05_SOURCE_ROOT"
 
 _PROJECT_SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
@@ -592,6 +594,13 @@ class ProjectConfig(BaseModel):
         """Explicit external destination for automatic curated-results upload."""
 
         value = os.environ.get(RESULTS_UPLOAD_ROOT_ENV) or os.environ.get(PIPELINE_DRIVE_ROOT_ENV)
+        return Path(value).expanduser() if value else None
+
+    @property
+    def phase05_source_root(self) -> Path | None:
+        """Read-only acquired drone/LiDAR campaign selected for Phase 05."""
+
+        value = os.environ.get(PHASE05_SOURCE_ROOT_ENV)
         return Path(value).expanduser() if value else None
 
     @property

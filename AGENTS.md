@@ -43,8 +43,9 @@ process working copies. Preserve unrelated user work. Do not perform unrelated d
 - Phase 04 should produce actual prospect candidates and rankings from Phase 03 evidence. The
   existing grid comparator may remain as a diagnostic, but it must not replace the functional
   prospect workflow.
-- Phase 05 remains parked until its real survey inputs are supplied. Do not let Phase 05 prevent
-  completion of Phases 00–04.
+- Phase 05 processes the supplied post-flight drone/LiDAR campaign into terrain, coverage, GIS/3D
+  and field handoff products. Physical flight, HSE and future mission decisions remain outside the
+  engine; missing product classes remain explicit data gaps.
 - Keep outputs simple: complete run artifacts stay in the run workspace; curated phase deliverables
   go to the local results mirror and the configured Google Drive destination.
 

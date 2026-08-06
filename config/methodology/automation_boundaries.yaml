@@ -81,9 +81,9 @@ boundaries:
     status: automated
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "05"
-    automation_category: field-acquisition
+    automation_category: desktop-orchestrated
     deterministic_authority:
-      - Flight-block geometry planning and post-flight processing, when built.
+      - Acquired campaign inventory, raster and LAS header QA, coverage footprints, terrain derivatives, GIS/3D packaging and field handoff.
     human_review_boundary:
       - Flight approval, HSE, and mission constraints.
     ai_permitted:
@@ -91,8 +91,8 @@ boundaries:
     ai_prohibited:
       - Flight or safety decisions, mission constraints, accuracy calculations.
     blocking_dependencies:
-      - Phase 05 is parked under METH-READY-001 pending physical acquisition, operational approvals and a separately reviewed implementation.
-    status: stub
+      - Full orthomosaic/DSM mosaics and LAZ/COPC conversion remain later processing slices; future physical flight remains outside the engine.
+    status: partially-implemented
     migration_source: AUTOMATION_ASSESSMENT.md (2026-07-07)
   - phase_id: "06"
     automation_category: field-acquisition

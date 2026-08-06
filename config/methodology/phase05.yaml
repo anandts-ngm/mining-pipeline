@@ -1,8 +1,8 @@
 format_version: 1.0.0
 phase_id: "05"
 requirements:
-  - requirement_id: P05-STUB-PRESERVATION-001
-    statement: Phase 05 is explicitly parked as a registered stub under METH-READY-001 until a separately approved implementation has physical campaign inputs and operational authority.
+  - requirement_id: P05-POST-FLIGHT-ACTIVATION-001
+    statement: Phase 05 processes the acquired campaign under METH-READY-001 without automating or retroactively claiming physical flight, HSE or mission authority.
     source_refs: [methodology.master-v9, repository.methodology-contracts, phase05.guide, METH-DISC-048]
     status: adopted
   - requirement_id: P05-SOURCE-PROVENANCE-001

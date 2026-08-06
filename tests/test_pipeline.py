@@ -669,11 +669,9 @@ def test_missing_data_message_flags_incomplete_walk(raw_archive):
     assert "found" in text  # surfaces the walk-vs-manifest count
 
 
-def test_stub_phase_real_run_records_not_implemented(raw_archive):
-    from buduunkhad.core.execution_policy import ExecutionPolicyError
-
+def test_phase05_real_run_requires_exact_phase04_binding(raw_archive):
     config, register, _raw = raw_archive
-    with pytest.raises(ExecutionPolicyError, match="Phase 05 has no real execution mode"):
+    with pytest.raises(RuntimeError, match=r"predecessor-run selectors.*missing=\['04'\]"):
         run_pipeline(config, register, only=["05"], dry_run=False)
 
 

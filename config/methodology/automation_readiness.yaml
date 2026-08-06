@@ -2,20 +2,21 @@ format_version: 1.0.0
 interpretation: Operational prerequisites and exclusions; not unresolved methodology authority, scientific approval or a gate decision.
 obligations:
   - obligation_id: METH-READY-001
-    subject: phase05-parked
+    subject: phase05-post-flight-processing-activated
     affected_phases: ["05"]
-    status: parked
-    blocks_phase_completion: true
-    decision: Keep Phase 05 registered as a stub and outside the current automation scope.
+    status: owner-accepted
+    blocks_phase_completion: false
+    decision: Acquired drone, LiDAR, control and reporting data are available; activate deterministic post-flight processing while leaving physical flight decisions outside the engine.
     required_evidence:
-      - Accepted Phase 04 A/B prospect polygons from the future authoritative prospect workflow.
-      - Acquired drone, LiDAR, GNSS/control, flight-log and environmental records.
-      - Flight, HSE and operational approvals plus a separately reviewed implementation.
+      - Available Phase 04 prospect candidates for field-planning overlays; an absent A/B class remains an explicit priority gap.
+      - Acquired drone, LiDAR, GNSS/control, quality-report and daily-report records.
+      - Deterministic post-flight implementation that does not claim flight or HSE authority.
     deterministic_next_steps:
-      - None in the current scope; do not infer or implement mission parameters.
+      - Inventory B1-B79, validate raster and point-cloud headers, and produce compact terrain, coverage, GIS and field handoff products.
+      - Add full-area orthomosaic/DSM mosaics and per-block LAZ/COPC conversion after the initial bounded processing slice.
     required_human_authority:
-      - project owner
-      - qualified flight and HSE authorities
+      - project owner direction supplied for processing the acquired campaign
+      - qualified flight and HSE authorities remain responsible for any future physical mission
     source_refs: [methodology.master-v9, phase05.guide, METH-DISC-048, METH-DISC-069]
   - obligation_id: METH-READY-002
     subject: kompsat-external-use-licence-exclusion

@@ -174,9 +174,15 @@ def write_layered_qgz(
     title: str,
     layers: list[QgzLayer],
     initial_extent: QgzExtent | None = None,
+    terrain_layer_name: str | None = None,
     qgis_version: str = "3.34.0",
 ) -> Path:
-    """Write a .qgz whose project contains ``layers`` top-to-bottom in tree order."""
+    """Write a .qgz whose project contains ``layers`` top-to-bottom in tree order.
+
+    When ``terrain_layer_name`` identifies a raster layer, the project also contains a named
+    3D view whose terrain generator uses that layer.  The ordinary 2D project remains complete
+    for QGIS builds that ignore the 3D-view metadata.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -210,10 +216,15 @@ def write_layered_qgz(
     project_layers = ET.SubElement(qgis, "projectlayers")
     layer_order = ET.SubElement(qgis, "layerorder")
     groups: dict[str, ET.Element] = {}
+    terrain_layer_id: str | None = None
 
     for lyr in layers:
         geometry_attr = GEOMETRY_ATTR[lyr.geometry]
         lid = _layer_id(lyr.name)
+        if lyr.name == terrain_layer_name:
+            if lyr.provider != "gdal":
+                raise ValueError("QGIS 3D terrain layer must be a GDAL raster")
+            terrain_layer_id = lid
         layer_group = groups.get(lyr.group)
         if layer_group is None:
             layer_group = ET.SubElement(
@@ -253,6 +264,36 @@ def write_layered_qgz(
         if lyr.symbol is not None and geometry_attr not in {"No geometry", "Raster"}:
             maplayer.append(_renderer_element(lyr.symbol))
         ET.SubElement(layer_order, "layer", {"id": lid})
+
+    if terrain_layer_name is not None:
+        if terrain_layer_id is None:
+            raise ValueError("QGIS 3D terrain layer is not present in the project")
+        views = ET.SubElement(qgis, "mapViewDocks3D")
+        view = ET.SubElement(views, "view", {"name": "Drone terrain 3D"})
+        scene = ET.SubElement(
+            view,
+            "qgis3d",
+            {
+                "field-of-view": "45",
+                "projection-type": "1",
+                "camera-navigation-mode": "1",
+            },
+        )
+        terrain = ET.SubElement(
+            scene,
+            "terrain",
+            {
+                "type": "dem",
+                "elevation-scale": "1",
+                "elevation-offset": "0",
+                "terrain-rendering-enabled": "1",
+            },
+        )
+        ET.SubElement(
+            terrain,
+            "generator",
+            {"layer": terrain_layer_id, "resolution": "16", "skirt-height": "10"},
+        )
 
     ET.indent(qgis)
     qgs_xml = ET.tostring(qgis, encoding="unicode", xml_declaration=True)

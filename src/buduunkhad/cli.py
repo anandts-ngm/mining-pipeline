@@ -130,7 +130,7 @@ def _curate_and_upload_results(
         cfg.runs_root,
         cfg.evidence_root,
         cfg.results_root,
-    )
+    ) + ((cfg.phase05_source_root,) if cfg.phase05_source_root is not None else ())
     mirrored = (
         upload_results_view(
             result.root,

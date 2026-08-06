@@ -106,6 +106,7 @@ PHASE_INPUT_DEPENDENCIES: dict[str, frozenset[str]] = {
     "02": frozenset({"00", "01"}),
     "03": frozenset({"00", "01"}),
     "04": frozenset({"01", "03"}),
+    "05": frozenset({"04"}),
 }
 
 
@@ -574,6 +575,14 @@ def _execution_identity(
         "parameters_sha256": _sha256_json(parameters),
         "execution_policy_sha256": execution_policy.policy_sha256,
     }
+    if "05" in selected_phases and not dry_run:
+        from buduunkhad.core.phase05_drone import source_tree_identity
+
+        identity["phase05_source_inventory_sha256"] = (
+            source_tree_identity(config.phase05_source_root)
+            if config.phase05_source_root is not None
+            else _sha256_json({"phase05_source": "not-configured"})
+        )
     if authorizations:
         identity["authorizations_sha256"] = _sha256_json(
             [item.model_dump(mode="json") for item in authorizations]

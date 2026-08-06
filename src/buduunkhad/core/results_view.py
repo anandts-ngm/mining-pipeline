@@ -47,6 +47,7 @@ RESULTS_PHASE_DIRS = {
     "02": "02_remote_sensing",
     "03": "03_geology",
     "04": "04_prospects",
+    "05": "05_drone_lidar",
 }
 _DATA_SUFFIXES = frozenset({".gpkg", ".tif"})
 _PROJECT_SUFFIXES = frozenset({".qgz"})
@@ -92,7 +93,7 @@ class ResultsFile(_StrictModel):
     @classmethod
     def _known_phase(cls, value: str | None) -> str | None:
         if value is not None and value not in RESULTS_PHASE_DIRS:
-            raise ValueError("results file phase is outside Phase 00-04")
+            raise ValueError("results file phase is outside Phase 00-05")
         return value
 
     @field_validator("path", "source_path")
@@ -120,7 +121,7 @@ class ResultsPhase(_StrictModel):
     @classmethod
     def _known_phase(cls, value: str) -> str:
         if value not in RESULTS_PHASE_DIRS:
-            raise ValueError("results phase is outside Phase 00-04")
+            raise ValueError("results phase is outside Phase 00-05")
         return value
 
 
@@ -239,7 +240,7 @@ def materialize_results_view(
     data = _load_run_manifest(manifest_path, run_id=run_id)
     completed = _completed_phase_ids(data)
     if not completed:
-        raise ResultsViewError("source run has no complete Phase 00-04 outputs")
+        raise ResultsViewError("source run has no complete Phase 00-05 outputs")
 
     resolved = tuple(
         resolve_source_phase(

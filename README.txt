@@ -85,7 +85,7 @@ Where things live
 
 Implemented phase boundary
 --------------------------
-Phases 00-04 have substantial automated implementations. They produce real,
+Phases 00-05 have automated output-producing implementations. They produce real,
 sealed outputs from real inputs. Phase 03 combines
 deterministic evidence assembly with AI legend extraction, geological-feature
 proposals, critique and QGIS review packages. Phase 04 produces a fixed 250 m
@@ -98,7 +98,10 @@ Optional specialist reviews may improve Phase 03 georeferencing, evidence and 03
 conclusions, but review-only pending rows do not stop automated Phase 00-04 output
 generation. The separate reviewed prospect-polygon implementation remains available
 when external reviewed polygons and scorecards are supplied. Neither automated nor
-reviewed outputs are proof of ore, grade, resource or economics. Phases 05-11 and 99
+reviewed outputs are proof of ore, grade, resource or economics. Phase 05 starts from
+the acquired drone/LiDAR campaign and produces a block register, coverage, DTM terrain
+products, a QGIS 3D/field project and a handoff package without duplicating the raw survey.
+Full mosaics and LAZ/COPC conversion remain follow-on processing slices. Phases 06-11 and 99
 remain registered stubs. The build-run-review
 command creates one portable QGIS view over sealed Phase 01–03 outputs and validated
 AI review packages while preserving exact source and model lineage.

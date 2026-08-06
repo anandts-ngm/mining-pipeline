@@ -1,5 +1,5 @@
 format_version: 1.1.0
-interpretation: Owner-directed functional execution policy; automated Phases 00-04 produce completed outputs while missing inputs remain explicit data gaps.
+interpretation: Owner-directed functional execution policy; automated Phases 00-05 produce completed outputs while missing inputs remain explicit data gaps.
 phase_policies:
   - phase_id: "00"
     default_real_mode: automated
@@ -22,11 +22,9 @@ phase_policies:
     permitted_real_modes: [automated, legacy-comparator]
     blocked_modes: []
   - phase_id: "05"
-    default_real_mode: null
-    permitted_real_modes: []
-    blocked_modes:
-      - mode: authoritative
-        readiness_ids: [METH-READY-001]
+    default_real_mode: automated
+    permitted_real_modes: [automated]
+    blocked_modes: []
   - phase_id: "06"
     default_real_mode: null
     permitted_real_modes: []

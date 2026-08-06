@@ -162,6 +162,7 @@ def _isolate_external_storage_roots(monkeypatch: pytest.MonkeyPatch) -> None:
         "BUDUUNKHAD_RESULTS_ROOT",
         "BUDUUNKHAD_RESULTS_MIRROR_ROOT",
         "BUDUUNKHAD_RESULTS_UPLOAD_ROOT",
+        "BUDUUNKHAD_PHASE05_SOURCE_ROOT",
         "BUDUUNKHAD_SNAPSHOT_ROOT",
         "BUDUUNKHAD_EVAL_ROOT",
         "BUDUUNKHAD_PUBLISH_ROOT",

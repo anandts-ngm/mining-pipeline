@@ -170,7 +170,7 @@ class ExecutionPolicyRegistry(BaseModel):
 
     format_version: Literal["1.1.0"]
     interpretation: Literal[
-        "Owner-directed functional execution policy; automated Phases 00-04 produce completed "
+        "Owner-directed functional execution policy; automated Phases 00-05 produce completed "
         "outputs while missing inputs remain explicit data gaps."
     ]
     phase_policies: tuple[PhaseExecutionPolicy, ...]
