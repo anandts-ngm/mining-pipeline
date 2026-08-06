@@ -37,3 +37,7 @@ dependencies:
   # --- optional, for Phase 02 DEM derivatives ---
   - richdem
   - whitebox_tools
+  # --- optional, for Phase 05 point-cloud reading ---
+  # The delivered clouds are compressed LAZ. laspy needs its lazrs backend to open them;
+  # both are pip-only, so they come from the `pip install -e ".[dev]"` step documented above
+  # (or `.[pointcloud]` for a runtime-only install) rather than from conda-forge.

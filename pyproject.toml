@@ -37,6 +37,10 @@ dem = ["richdem>=0.3; python_version < '3.13'", "whitebox>=2.3", "scikit-image>=
 openai = ["openai>=1.68,<3"]
 anthropic = ["anthropic>=0.45,<1"]
 documents = ["pypdfium2>=4.30,<6", "Pillow>=10,<13"]
+# Phase-05 point-cloud reading. The campaign is delivered as compressed LAZ, which needs the
+# lazrs backend; laspy alone only opens uncompressed LAS. Header-only inspection works without
+# either, so Phase 05 still inventories and reports clouds when this extra is absent.
+pointcloud = ["laspy>=2.7,<3", "lazrs>=0.8,<0.9"]
 dev = [
     "build>=1.2,<2.0",
     "hatchling>=1.21",
@@ -48,6 +52,8 @@ dev = [
     # end users can still select the narrower runtime extras above.
     "Pillow>=10,<13",
     "scikit-image>=0.22",
+    "laspy>=2.7,<3",
+    "lazrs>=0.8,<0.9",
     # Keep CLI, pre-commit, CI, and editor diagnostics deterministic.
     "ruff==0.15.22",
     # ty is pre-1.0 and fast-moving; pin it exactly so a routine ty release cannot
