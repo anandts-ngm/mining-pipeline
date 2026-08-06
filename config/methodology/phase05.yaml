@@ -17,3 +17,23 @@ requirements:
     statement: Qualified humans retain flight, HSE, mission, control-network and acceptance authority; AI may only propose priorities or interpretations.
     source_refs: [repository.methodology-contracts, phase05.guide]
     status: adopted
+  - requirement_id: P05-SOP-STAGE-NUMBERING-001
+    statement: The integrated drone SOP numbers its own processing stages 5.0 to 5.10, which are subdivisions of exploration Phase 05 and never exploration phases 00 to 10; its stage 5.4 is P1 Metashape processing, not exploration Phase 04.
+    source_refs: [repository.methodology-contracts, phase05.drone-integrated-sop, METH-DISC-078]
+    status: adopted
+  - requirement_id: P05-SOP-THRESHOLD-001
+    statement: Operational thresholds recorded in the integrated drone SOP, including accuracy, density, overlap, classification and preview limits, stay reference-only until the project owner adopts them; they do not become production policy by appearing in the SOP.
+    source_refs: [repository.methodology-contracts, phase05.drone-integrated-sop, METH-DISC-078]
+    status: adopted
+  - requirement_id: P05-DTM-SOURCE-PRIORITY-001
+    statement: A bare-earth terrain model is selected by source priority - approved ground-classified DTM first, then a DTM rasterized from ground-classified returns, then a vendor DEM that passed QA - and a surface model is never substituted for terrain except as object or vegetation context.
+    source_refs: [repository.methodology-contracts, phase05.drone-integrated-sop]
+    status: adopted
+  - requirement_id: P05-TERRAIN-DERIVATIVE-EVIDENCE-001
+    statement: Structural reading of the terrain uses multiple illuminations and derivative types rather than one hillshade, and a proposed feature must recur across independent evidence before it is recorded as an interpretation.
+    source_refs: [repository.methodology-contracts, phase05.drone-integrated-sop]
+    status: adopted
+  - requirement_id: P05-PREVIEW-NOT-MASTER-001
+    statement: Rendered or resampled preview products, including AI interpretation tiles, are never master data; each carries its source master resolution, its preview resolution and whether it was resampled, so a coarser survey can never be presented as finer.
+    source_refs: [repository.methodology-contracts, phase05.drone-integrated-sop]
+    status: adopted

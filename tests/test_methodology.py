@@ -25,7 +25,7 @@ from buduunkhad.geospatial_ai.methodology import (
 )
 from buduunkhad.repository_policy import APPROVED_METHODOLOGY_DOCUMENTS
 
-REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 78)}
+REQUIRED_DISCREPANCY_IDS = {f"METH-DISC-{number:03d}" for number in range(1, 79)}
 METHODOLOGY_SNAPSHOT_SHA256 = "05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd"
 VERIFIED_EXTERNAL_SOURCES = {
     "methodology.master-v9": (
@@ -361,7 +361,7 @@ def test_discrepancy_register_is_the_complete_decision_history() -> None:
     identities = [item.discrepancy_id for item in registry.discrepancies]
     assert len(set(identities)) == len(identities)
     assert set(identities) == REQUIRED_DISCREPANCY_IDS
-    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 78)]
+    assert identities == [f"METH-DISC-{number:03d}" for number in range(1, 79)]
     assert all(
         item.status in {"unresolved", "resolved", "superseded", "withdrawn"}
         for item in registry.discrepancies

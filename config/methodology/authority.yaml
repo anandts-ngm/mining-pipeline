@@ -143,6 +143,16 @@ sources:
     existence_verified_by: Anand Tsogtjargal
     existence_evidence_reference: connected-google-drive-read-only-metadata-verification::2026-07-17T07:55:05Z
     superseding_contract: METH-DISC-069 makes methodology.master-v9 authoritative for Phase 05; parameters found only in this guide remain non-authoritative until separately approved.
+  - source_id: phase05.drone-integrated-sop
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase05-drone-data-integrated-sop
+    role: phase-source
+    authority_status: reference-only
+    expected_document: Drone_Data_Integrated_Phase5_SOP_v1.1_Detailed.docx
+    existence_verified: false
+    superseding_contract: METH-DISC-069 makes methodology.master-v9 authoritative for Phase 05; the operational thresholds this SOP records are reference-only under P05-NO-NEW-THRESHOLD-001 until separately approved.
+    remaining_actions:
+      - Supply the external file identifier and verified-snapshot identity so the markdown mirror can be byte-pinned and tracked; it is held untracked in docs/methodology/phase_05 until then.
+      - Decide which recorded thresholds the project owner adopts as production policy under METH-DISC-078.
   - source_id: phase05.flight-template-matrice400
     external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::phase05-flight-planning-template-matrice400
     role: operational-template

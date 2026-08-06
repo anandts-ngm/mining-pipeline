@@ -1240,3 +1240,20 @@ discrepancies:
     effective_version: methodology-contracts-v1.6.0
     implementation_evidence: authority.yaml repository_copy entries for methodology.master-v9 and phase01-phase04 guides; APPROVED_METHODOLOGY_DOCUMENTS markdown pins; repository policy and methodology mirror tests.
     related_discrepancy_ids: [METH-DISC-075]
+  - discrepancy_id: METH-DISC-078
+    subject: drone-integrated-sop-stage-numbering-and-authority
+    compared_sources:
+      - methodology.master-v9
+      - phase05.guide
+      - phase05.drone-integrated-sop
+      - config/methodology/phase05.yaml
+    statement: The supplied integrated drone SOP numbers its own processing stages 00 to 10, which collide with the exploration phase numbering, and it records operational thresholds for accuracy, density, overlap, classification and preview limits that no adopted contract had established.
+    operational_impact: Read as exploration phases, the SOP's stage 04 would be mistaken for prospect delineation and its stage 06 for reconnaissance mapping; and its thresholds could silently become production policy without owner adoption.
+    status: resolved
+    resolution: Renumber the SOP's internal stages to 5.0 through 5.10 so they read as subdivisions of exploration Phase 05, register the SOP as a reference-only phase source, and adopt only its non-numeric working principles - terrain source priority, multi-evidence structural reading, and preview-is-not-master provenance. Every numeric threshold stays reference-only pending a separate owner decision.
+    rationale: The renumbering removes a collision that would misdirect both people and automated readers, while P05-NO-NEW-THRESHOLD-001 already forbids a reference document from setting production thresholds on its own. Adopting the working principles costs nothing in authority because they restate existing practice; adopting the numbers would set survey acceptance criteria the master methodology has not approved.
+    approver: repository-owner directive
+    resolved_on: "2026-08-06"
+    effective_version: methodology-contracts-v1.6.0
+    implementation_evidence: authority.yaml phase05.drone-integrated-sop reference-only registration; phase05.yaml requirements P05-SOP-STAGE-NUMBERING-001, P05-SOP-THRESHOLD-001, P05-DTM-SOURCE-PRIORITY-001, P05-TERRAIN-DERIVATIVE-EVIDENCE-001 and P05-PREVIEW-NOT-MASTER-001.
+    related_discrepancy_ids: [METH-DISC-069, METH-DISC-077]
