@@ -79,8 +79,9 @@ implementation_coverage:
     output_refs:
       - XV023222_Buduunkhad_ALOS-PALSAR_DEM_12p5m_<5km-buffer>_EPSG32647_v01.tif
       - XV023222_Buduunkhad_Terrain_Derivatives_Index_v01.xlsx
-      - XV023222_Buduunkhad_Hydrology_Drainage_Watershed_EPSG32647_v01.gpkg
-      - XV023222_Buduunkhad_Lineament_Interpretation_MachineDraft_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_DEM_Drainage_Network_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_DEM_Watersheds_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_DEM_Lineament_Draft_EPSG32647_v01.gpkg
     qaqc_checks:
       - Terrain rasters are finite, spatially aligned and COG-valid.
       - Hydrology parameters match the exact phase02_processing.yaml profile.
@@ -220,7 +221,7 @@ implementation_coverage:
       - src/buduunkhad/phases/phase02_remote_sensing.py::Phase02RemoteSensing._do_lineaments
       - src/buduunkhad/ai/artifacts.py::AIArtifact
     output_refs:
-      - XV023222_Buduunkhad_Lineament_Interpretation_MachineDraft_EPSG32647_v01.gpkg
+      - XV023222_Buduunkhad_DEM_Lineament_Draft_EPSG32647_v01.gpkg
       - AI_DRAFT review package
     qaqc_checks:
       - Machine geometry is labelled draft support evidence with source, method and limitations.

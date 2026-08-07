@@ -57,8 +57,8 @@ implementation_coverage:
       - src/buduunkhad/core/phase03_sources.py::create_phase03_source_traceability
     output_refs:
       - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/12_Phase3_QAQC_and_Handover/XV-023222_Buduunkhad_Phase3_Source_Traceability.json
-      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/02_CMCS_MRPAM_5_10_20_25km/CMCS_context_buffers
-      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/07_Occurrence_Register_and_Coordinate_QAQC/XV-023222_Buduunkhad_Occurrence_Register.xlsx
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/08_CMCS_MRPAM_Buffer_Check_5km_10km_20km_25km/XV023222_Buduunkhad_CMCS_MRPAM_Buffer_5km_10km_20km_25km_EPSG32647_v01.gpkg
+      - 03_Phase_3_Geological_Metallogenic_and_CMCS_Synthesis/05_Local_Geology_Occurrence_1M50K/XV-023222_Buduunkhad_Mineral_Occurrences_Register_v01.xlsx
     qaqc_checks:
       - The traceability record contains exactly inputs 1-8 and 53-72 and revalidates every copied byte.
       - Context rings use only the adopted distances and remain labelled support evidence.
