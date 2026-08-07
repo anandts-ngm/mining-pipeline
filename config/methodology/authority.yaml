@@ -281,6 +281,22 @@ sources:
     existence_evidence_reference: verified-local-snapshot-copy::05da887bef2d734a9e4507462b85bcbff37f833670cc0dd24d0ba0d7a15a8ecd
     remaining_actions:
       - Adopt into a phase99 methodology contract when the phase is built.
+  - source_id: drive.exploration-workflow-root
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::exploration-workflow-drive-root
+    role: methodology-source
+    authority_status: reference-only
+    external_file_id: 1lKI9SxFot2kQdnULCtXoP2uQ2WHq2krX
+    existence_verified: false
+    remaining_actions:
+      - Record a verified snapshot identity before any document under this root is treated as authoritative.
+  - source_id: drive.acquisition-data-root
+    external_reference: BUDUUNKHAD_WORKFLOW_DOCS_ROOT::acquisition-data-drive-root
+    role: phase-source
+    authority_status: reference-only
+    external_file_id: 1EhF1o7ilDD8f-u73-fUHO5EXnEjkvlDP
+    existence_verified: false
+    remaining_actions:
+      - Bind every phase input consumed from this root to config/raw_manifest.csv before it scores.
 precedence:
   - methodology.master-v9
   - repository.methodology-contracts
