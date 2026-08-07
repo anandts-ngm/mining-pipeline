@@ -114,6 +114,24 @@ _OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element"
 # the first ten characters of a field name: the real Buduunkhad halo layer spells it "main_eleme".
 _ELEMENT_COLUMN_PREFIXES = ("main_elem", "commodit", "element")
 
+
+def _declared_source_scale(gdf) -> str:
+    """Return the map scale an admitted layer states about itself, when it states one clearly.
+
+    The shared 14-field evidence schema keeps only ``source_scale``, so a layer arriving with its
+    own ``scale`` column loses that provenance unless it is mapped across. Only an unambiguous
+    single value is adopted: a layer mixing scales must not be stamped with one of them.
+    """
+
+    for name in gdf.columns:
+        if str(name).casefold() not in {"scale", "map_scale", "source_scale"}:
+            continue
+        values = {str(value).strip() for value in gdf[name].dropna() if str(value).strip()}
+        if len(values) == 1:
+            return next(iter(values))
+    return ""
+
+
 # 6 candidate deposit models (03A) pre-seeded into the evidence table.
 DEPOSIT_MODELS: list[tuple[str, str]] = [
     ("Au-Cu hydrothermal vein", "High / Moderate / Low"),
@@ -940,7 +958,7 @@ class Phase03GeologySynthesis(Phase):
         setdefault("source_raw_filename", filename)
         setdefault("source_group", source_group)
         setdefault("processing_phase", self.id)
-        setdefault("source_scale", scale)
+        setdefault("source_scale", scale or _declared_source_scale(gdf))
         gdf["geometry_type"] = geom_type.lower().replace("multi", "")
         setdefault("evidence_type", evidence_type)
         setdefault("validation_status", HISTORICAL_VALIDATION)
