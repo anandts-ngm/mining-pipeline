@@ -10,15 +10,19 @@ ai:
   external_data_allowed: true
   request_timeout_seconds: 3600
   max_output_tokens: 32768
-  # The six configured Phase 03 sources cost 11.00 each (2.00 legend + 5.00 feature + 4.00
-  # critique) = 66.00 for a full catalogue run, and each source needs a legend, one or more
-  # feature requests (large maps tile past max_input_images_per_request) and a critique. The
-  # former 20.00 / 4-request caps could not fund even two sources, so only single-source runs
-  # were executable. These ceilings fund the whole catalogue with headroom for tiling and retries.
+  # The cost ceiling is a pre-flight bound on the estimate for the sources a run selects, not a
+  # budget for the catalogue. One source estimates 11.00 (2.00 legend + 5.00 feature + 4.00
+  # critique), so 15.00 funds exactly one source per run and hard-stops an accidental multi-source
+  # run before a single request is sent. Extract incrementally with --ai-source and the whole
+  # catalogue costs the same 66.00 spread across runs you choose to make.
+  #
+  # The request ceiling is a different constraint and was the real blocker: a single source needs a
+  # legend, a critique and one or more feature requests, because large maps tile past
+  # max_input_images_per_request. At 4 requests even one source could not complete.
   max_requests_per_run: 64
   max_input_images_per_request: 24
   max_input_bytes_per_request: 100000000
-  max_cost_per_run_usd: "150.00"
+  max_cost_per_run_usd: "15.00"
   concurrency: 1
   source_egress_policy: require-explicit-approval
   review_policy:

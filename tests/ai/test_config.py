@@ -57,7 +57,7 @@ def test_standalone_openai_profile_is_explicit_and_does_not_change_default() -> 
     assert ai.max_requests_per_run == 64
     assert ai.max_input_images_per_request == 24
     assert ai.max_input_bytes_per_request == 100_000_000
-    assert ai.max_cost_per_run_usd == Decimal("150.00")
+    assert ai.max_cost_per_run_usd == Decimal("15.00")
     assert ai.phase03_workflow is not None
     assert ai.phase03_workflow.legend_tile_size == 4096
     assert ai.phase03_workflow.feature_tile_size == 1536
