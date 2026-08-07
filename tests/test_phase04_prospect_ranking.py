@@ -430,6 +430,36 @@ def test_phase04_delineates_prospects(raw_archive):
     )
 
 
+def test_phase04_prospect_polygons_stay_inside_the_licence(raw_archive):
+    # Cells are scored over the licence plus a context margin, so an unclipped cluster can reach
+    # past the boundary and claim ground the licence does not cover.
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    _run_to_03(ctx)
+    _write_68(ctx, config)
+    Phase03GeologySynthesis().run(ctx)
+    _inject_evidence(config)
+
+    phase = Phase04ProspectRanking()
+    phase.prepare(ctx)
+    assert phase.run(ctx).status == "ok"
+
+    licence = vector_io.read_layer(
+        _evidence_gpkg_03(config), "license_boundary"
+    ).geometry.union_all()
+    pdir = _p04_dir(config)
+    pp = next((pdir / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg"))
+    g = vector_io.read_layer(pp, "prospect_candidate_areas")
+    assert len(g) >= 1
+    for _, row in g.iterrows():
+        outside_ha = row.geometry.difference(licence).area / 10_000.0
+        assert outside_ha == pytest.approx(0.0, abs=1e-6), (
+            f"{row['candidate_id']} claims {outside_ha:.2f} ha outside the licence"
+        )
+        # the reported area must describe the clipped polygon, not the pre-clip cluster
+        assert row["area_ha"] == pytest.approx(row.geometry.area / 10_000.0, abs=0.01)
+
+
 def test_phase04_attribute_evidence_activates_rs_and_elements(raw_archive):
     # Attribute-aware path: feeding ASTER-alteration + a geochem-anomaly (with elements) activates
     # rs (0 -> 15) and geochem (0 -> 20), populates `elements`, and — per the guide §6 desktop

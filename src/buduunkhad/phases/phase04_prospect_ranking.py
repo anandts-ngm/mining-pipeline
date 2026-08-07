@@ -437,6 +437,14 @@ class Phase04ProspectRanking(Phase):
 
         # scoring grid over boundary + context margin
         aoi = boundary.to_crs(epsg=epsg).copy()
+        # Cells reach into the context margin so evidence just outside the licence still informs a
+        # score, but a delivered prospect must lie inside the licence. Keep the scored extent and
+        # clip only the geometry that is published.
+        licence_area = (
+            aoi.geometry.union_all()
+            if hasattr(aoi.geometry, "union_all")
+            else aoi.geometry.unary_union
+        )
         aoi["geometry"] = aoi.geometry.buffer(CONTEXT_BUFFER_M)
         cells = vector_io.make_grid(aoi, GRID_CELL_M, epsg)
         self._grid_cells = len(cells)
@@ -471,7 +479,7 @@ class Phase04ProspectRanking(Phase):
             # "intersects" would also attach it to a neighbouring cluster it merely corner-touches,
             # double-counting the cell into that cluster's max/mean scores.
             joined = gpd.sjoin(sub, clusters, predicate="within", how="left")
-            prospects.extend(self._build_prospects(clusters, joined, ev, attr, epsg))
+            prospects.extend(self._build_prospects(clusters, joined, ev, attr, epsg, licence_area))
         # global rank + ids across all bands (score first, then size)
         prospects.sort(key=lambda r: (r["max_score"], r["area_ha"]), reverse=True)
         for i, r in enumerate(prospects, start=1):
@@ -620,7 +628,9 @@ class Phase04ProspectRanking(Phase):
         cells["priority"] = cells["score"].map(classify)
         return cells
 
-    def _build_prospects(self, clusters, joined, ev: dict, attr: dict, epsg: int) -> list[dict]:
+    def _build_prospects(
+        self, clusters, joined, ev: dict, attr: dict, epsg: int, licence_area
+    ) -> list[dict]:
         """Aggregate scored cells per contiguous cluster into ranked prospect records."""
         import geopandas as gpd
         import pandas as pd
@@ -660,7 +670,9 @@ class Phase04ProspectRanking(Phase):
             max_score = int(members["score"].max())
             mean_score = round(float(members["score"].mean()), 1)
             cls = classify(max_score)
-            geom = cl.geometry
+            geom = cl.geometry.intersection(licence_area)
+            if geom.is_empty:
+                continue
             rep = geom.representative_point()
             row: dict = {
                 "_geometry": geom,
