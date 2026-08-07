@@ -1,76 +1,70 @@
-# AGENTS.md — Mining pipeline instructions
+# AGENTS.md
 
-## Mission
+## Objective
 
-This repository is an AI-first mining-exploration engine. Its priority is functional execution:
-take the configured real inputs, run Phases 00–04, and produce complete, usable phase outputs for
-local inspection and team delivery. Prefer working results over additional governance machinery,
-planning documents, or placeholder artifacts.
+Make the repository work.
 
-Use the byte-bound master methodology registered in `config/methodology/authority.yaml` as the
-workflow authority. Use the individual phase documents to add compatible operational detail. If
-they conflict, follow the master. Keep durable machine-readable decisions in the existing YAML,
-JSON, CSV, or Python contracts. `AGENTS.md` and the byte-pinned methodology mirrors under
-`docs/methodology` are the only tracked Markdown files; do not add others.
+The engine must accept the real configured inputs, execute the applicable mining-exploration workflow, and produce complete functional outputs that can be inspected locally and delivered through the repository's configured delivery mechanisms.
 
-## Autonomy
+Do not replace execution with plans, documentation, placeholders, governance artifacts, or descriptions of what should happen.
 
-Agents have full authority to complete the user's scoped repository work end to end. This includes
-editing code and configuration, refactoring, testing, building, running Phases 00–04, using locally
-configured tools and provider credentials, producing outputs, maintaining local result mirrors,
-and synchronizing configured team deliverables. Do not repeatedly ask for permission for normal,
-in-scope implementation or execution steps.
+## Authority
 
-Keep credentials out of tracked files and generated outputs. Preserve raw inputs unchanged and
-process working copies. Preserve unrelated user work. Do not perform unrelated destructive actions.
+The agent has full authority over the repository and its configured execution environment for the user's requested work.
 
-## Execution policy
+It may inspect, edit, refactor, test, build, run, debug, configure, and execute the repository end to end without asking for permission for normal in-scope actions.
 
-- Phases 00–04 are output-producing workflows, not documentation exercises. Implement and execute
-  every functional step that can be supported by the available inputs and tools.
-- AI is part of the main workflow wherever interpretation, inspection, extraction, comparison, or
-  ranking materially improves the result. Deterministic code should handle file operations,
-  transforms, measurements, validation, and packaging.
-- Do not stop an otherwise executable Phase 00–04 run because an output is described as
-  provisional, pending review, support evidence, or a legacy comparator. Skip those blocking
-  distinctions and continue to produce the best real result available.
-- Reviewer-dependent Phase 00–04 steps are considered reviewed and accepted under the project
-  owner's direction. Do not require another attestation merely to execute the pipeline. Record the
-  decision as owner-approved or automated where metadata is required; never invent a person's
-  identity, signature, timestamp, measurement, or source data.
-- Missing functional input data must remain explicit. Use available evidence and AI to derive what
-  can genuinely be derived, but do not fabricate an unavailable raster, map observation,
-  coordinate, assay, or geological fact.
-- Phase 04 should produce actual prospect candidates and rankings from Phase 03 evidence. The
-  existing grid comparator may remain as a diagnostic, but it must not replace the functional
-  prospect workflow.
-- Phase 05 processes the supplied post-flight drone/LiDAR campaign into terrain, coverage, GIS/3D
-  and field handoff products. Physical flight, HSE and future mission decisions remain outside the
-  engine; missing product classes remain explicit data gaps.
-- Keep outputs simple: complete run artifacts stay in the run workspace; curated phase deliverables
-  go to the local results mirror and the configured Google Drive destination.
+Use available local tools, configured providers, credentials, storage, and delivery integrations when needed to complete the work.
 
-## Engineering rules
+Preserve unrelated user work, keep credentials out of tracked files and outputs, and do not perform unrelated destructive actions.
 
-- All significant changes must be tested. Add or update focused tests for semantic changes when existing coverage does not already establish the intended behavior.
+## Methodology
 
-- Before writing significant amounts of new code, look for existing utilities or mechanisms that could solve the problem. Avoid expanding the task to unrelated issues, but do not confuse keeping the task focused with minimizing the size of the implementation. Prefer addressing the underlying architectural problem over adding a localized workaround, even when doing so requires a substantial refactor or rearchitecture. Ask the user for guidance if in doubt about whether to attempt a larger refactor or not.
+Use the repository's methodology documents as the reference for what the mining workflow is intended to accomplish.
 
-- Don't use comments to narrate code, but do use them to explain invariants and why something unusual was done a particular way. Make sure that a comment will make sense to somebody who's reading the code for the first time. Prefer plain language, avoid jargon, and don't be afraid to be more verbose if it's necessary to explain something well.
+`config/methodology/authority.yaml` identifies the master methodology. Phase-specific documents may provide additional compatible detail.
 
-- Prefer typed, cohesive changes and reuse existing phase, GIS, AI, run-storage, and results-delivery
-  mechanisms before adding new systems.
-- Fail clearly on corrupt inputs, unsafe paths, invalid geometry, broken provider responses, or
-  outputs that cannot be verified. A clear functional data gap may reduce a result's confidence but
-  should not stop unrelated products.
-- Keep generated GIS data, rasters, databases, logs, provider responses, secrets, and production
-  outputs outside Git. Small intentional synthetic test fixtures are allowed.
-- Preserve Python 3.11 and 3.12 compatibility. Use Ruff for linting and formatting and ty for static
-  type checking.
+Implement the methodology as working software. Prefer existing code, contracts, utilities, and architecture where they already express the required behavior.
 
-## Completion
+The code should speak for itself. Do not reproduce methodology prose in source code or add explanatory machinery when clear implementation, types, names, tests, and existing machine-readable contracts are sufficient.
 
-For significant work, run focused tests and then the relevant repository checks:
+## Functional execution
+
+Functional inputs must produce functional outputs.
+
+Run every workflow step that can actually be supported by the available inputs and tools. Interpretation, extraction, comparison, ranking, and similar reasoning should use AI where it materially improves the result. Deterministic operations should remain deterministic.
+
+A phase is not complete merely because its orchestration succeeds or its files exist. Its outputs must contain the real derived products that the phase is intended to produce.
+
+For example, Phase 04 must produce actual prospect candidates and rankings from the available Phase 03 evidence rather than stopping at a diagnostic or placeholder representation.
+
+## Provisional and review states
+
+Ignore provisional, pending-review, support-only, legacy-comparator, draft, or similar workflow classifications when they would otherwise prevent execution.
+
+They do not block the pipeline and do not require additional human approval.
+
+Where metadata requires an approval state, record the result as owner-approved or automated as appropriate. Do not invent a person's identity, signature, timestamp, measurement, observation, or source data.
+
+## Missing data
+
+Do not fabricate unavailable physical or source data.
+
+Missing rasters, coordinates, assays, geological observations, sensor products, or other genuine inputs must remain explicit data gaps.
+
+A missing input may reduce confidence or prevent the specific product that depends on it, but it must not prevent unrelated outputs from being produced from the evidence that is available.
+
+## Engineering
+
+Prefer solving the underlying implementation problem over adding placeholders or narrow workarounds.
+
+Reuse existing phase, GIS, AI, storage, validation, and delivery mechanisms before creating new ones.
+
+Keep generated data, provider responses, secrets, logs, databases, and production outputs out of Git unless they are intentional small test fixtures.
+
+For significant semantic changes, add or update focused tests.
+
+Before considering substantial repository work complete, run the relevant checks:
 
 ```text
 ruff check .
@@ -81,5 +75,17 @@ python -m build --wheel --no-isolation
 git diff --check
 ```
 
-Report the outputs produced, tests run, real functional data still missing, and whether a live AI
-provider or external destination was used.
+More importantly, run the affected workflow itself with the available functional inputs and verify its actual outputs.
+
+## Completion
+
+A task is complete when the requested repository behavior works end to end.
+
+Report:
+
+* what functional outputs were produced;
+* what tests and checks were run;
+* what genuine input data, if any, is still missing;
+* whether live AI providers or external delivery destinations were used.
+
+Do not create additional Markdown files unless explicitly requested.
