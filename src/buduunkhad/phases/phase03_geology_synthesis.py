@@ -114,6 +114,10 @@ _OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element"
 # the first ten characters of a field name: the real Buduunkhad halo layer spells it "main_eleme".
 _ELEMENT_COLUMN_PREFIXES = ("main_elem", "commodit", "element")
 
+# Mirrors crs.source_geographic_epsg in project.yaml: the CRS a degree-valued layer is read as when
+# it declares a projected one it cannot possibly be in.
+_GEOGRAPHIC_EPSG = 4326
+
 
 def _declared_source_scale(gdf) -> str:
     """Return the map scale an admitted layer states about itself, when it states one clearly.
@@ -376,6 +380,7 @@ class Phase03GeologySynthesis(Phase):
     _selected_role_counts: dict[EvidenceRole, int]
     _selected_role_evidence: dict[EvidenceRole, list[str]]
     _model_scores: dict[str, tuple] | None
+    _coordinate_corrections: list[str]
     _layer_feature_counts: dict[str, int]
 
     def __init__(self) -> None:
@@ -396,6 +401,7 @@ class Phase03GeologySynthesis(Phase):
         self._selected_role_counts = {}
         self._selected_role_evidence = {}
         self._model_scores = None
+        self._coordinate_corrections = []
         self._layer_feature_counts = {}
 
     # ------------------------------------------------------------------ #
@@ -878,6 +884,34 @@ class Phase03GeologySynthesis(Phase):
                 empty.append(domain)
         return tuple(populated), tuple(empty)
 
+    def _correct_mislabelled_degrees(self, gdf, layer: str, *, target_epsg: int):
+        """Reproject a layer whose coordinates contradict the projected CRS it declares.
+
+        A metre CRS cannot hold values inside the geographic domain, so a layer declaring
+        EPSG:32647 while carrying degrees is mislabelled rather than located near the origin.
+        Reprojecting from the geographic interpretation is the only reading that puts the features
+        anywhere real; leaving them as declared plots them thousands of kilometres away. The
+        correction is recorded so the delivered package states that it happened.
+        """
+
+        if gdf.empty or gdf.crs is None or gdf.crs.is_geographic:
+            return gdf
+        bounds = gdf.total_bounds
+        if not all(abs(float(value)) < 1e5 for value in bounds):
+            return gdf
+        if not (abs(bounds[0]) <= 180 and abs(bounds[1]) <= 90):
+            raise ValueError(
+                f"evidence layer '{layer}' declares EPSG:{target_epsg} but its coordinates are "
+                f"neither projected nor geographic: {[round(float(v), 4) for v in bounds]}"
+            )
+        corrected = gdf.set_crs(epsg=_GEOGRAPHIC_EPSG, allow_override=True).to_crs(epsg=target_epsg)
+        self._notes.append(
+            f"Corrected '{layer}': {len(gdf)} feature(s) declared EPSG:{target_epsg} but held "
+            f"degrees; reprojected from EPSG:{_GEOGRAPHIC_EPSG}."
+        )
+        self._coordinate_corrections.append(layer)
+        return corrected
+
     def _prepare_evidence_gdf(
         self,
         gdf,
@@ -919,6 +953,8 @@ class Phase03GeologySynthesis(Phase):
             raise ValueError(
                 f"human evidence layer '{layer}' has no CRS; explicit source CRS is required"
             )
+        if target_epsg:
+            gdf = self._correct_mislabelled_degrees(gdf, layer, target_epsg=target_epsg)
 
         # promote to the layer's declared Multi* type so appends match the schema (no pyogrio warning)
         def _multi(g):
