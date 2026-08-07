@@ -361,7 +361,15 @@ def test_ai_first_phase03_batch_keeps_each_source_in_a_separate_attempt(
             ),
         }
     )
-    bounded_ai = config.ai.model_copy(update={"phase03_workflow": multi_workflow})
+    # Pin the bound here rather than inheriting the shipped operational cap, so this stays a test
+    # of the request guard and not of whatever ceiling config/ai.openai.yaml currently funds.
+    bounded_ai = config.ai.model_copy(
+        update={
+            "phase03_workflow": multi_workflow,
+            "max_requests_per_run": 4,
+            "max_cost_per_run_usd": "20.00",
+        }
+    )
     bounded_config = config.model_copy(update={"ai": bounded_ai})
     with pytest.raises(Phase03AIFirstError, match="needs 6 requests"):
         run_phase03_ai_first_batch(

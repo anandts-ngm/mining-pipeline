@@ -10,10 +10,15 @@ ai:
   external_data_allowed: true
   request_timeout_seconds: 3600
   max_output_tokens: 32768
-  max_requests_per_run: 4
+  # The six configured Phase 03 sources cost 11.00 each (2.00 legend + 5.00 feature + 4.00
+  # critique) = 66.00 for a full catalogue run, and each source needs a legend, one or more
+  # feature requests (large maps tile past max_input_images_per_request) and a critique. The
+  # former 20.00 / 4-request caps could not fund even two sources, so only single-source runs
+  # were executable. These ceilings fund the whole catalogue with headroom for tiling and retries.
+  max_requests_per_run: 64
   max_input_images_per_request: 24
   max_input_bytes_per_request: 100000000
-  max_cost_per_run_usd: "20.00"
+  max_cost_per_run_usd: "150.00"
   concurrency: 1
   source_egress_policy: require-explicit-approval
   review_policy:
