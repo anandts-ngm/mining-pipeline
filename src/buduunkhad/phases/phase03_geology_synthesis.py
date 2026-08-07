@@ -29,7 +29,12 @@ from buduunkhad.core.evidence_manifest import (
     phase03_target_accepts,
 )
 from buduunkhad.core.gates import GateDecision, evaluate_gate
-from buduunkhad.core.phase03_science import DEPOSIT_MODEL_SCORING_CRITERIA
+from buduunkhad.core.phase03_science import (
+    DEPOSIT_MODEL_SCORING_CRITERIA,
+    CriterionEvidence,
+    deposit_model_total,
+    score_deposit_models,
+)
 from buduunkhad.core.phase03_sources import (
     Phase03SourceTraceability,
     create_phase03_source_traceability,
@@ -103,6 +108,9 @@ _MINERALIZED_LAYER = "mineralized_points_point"
 # geometry, and everything not otherwise mapped is preserved verbatim in the cross-reference note.
 _OCC_NAME_KEYS = ("цэгийн дугаар", "occurrence_name", "occurrence", "name", "point", "цэг", "id")
 _OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element", "агуулга", "элемент", "mineral")
+
+# Attribute columns that carry measured element/commodity tokens on geochemical-anomaly layers.
+_ELEMENT_COLUMNS = ("main_element", "elements", "element", "commodity", "commodities")
 
 # 6 candidate deposit models (03A) pre-seeded into the evidence table.
 DEPOSIT_MODELS: list[tuple[str, str]] = [
@@ -346,6 +354,8 @@ class Phase03GeologySynthesis(Phase):
     _source_traceability: Phase03SourceTraceability | None
     _standalone_evidence: list[ResolvedEvidence]
     _selected_role_counts: dict[EvidenceRole, int]
+    _selected_role_evidence: dict[EvidenceRole, list[str]]
+    _model_scores: dict[str, tuple] | None
     _layer_feature_counts: dict[str, int]
 
     def __init__(self) -> None:
@@ -364,6 +374,8 @@ class Phase03GeologySynthesis(Phase):
         self._source_traceability = None
         self._standalone_evidence = []
         self._selected_role_counts = {}
+        self._selected_role_evidence = {}
+        self._model_scores = None
         self._layer_feature_counts = {}
 
     # ------------------------------------------------------------------ #
@@ -777,6 +789,9 @@ class Phase03GeologySynthesis(Phase):
             record = resolved.record
             self._selected_role_counts[record.evidence_role] = (
                 self._selected_role_counts.get(record.evidence_role, 0) + 1
+            )
+            self._selected_role_evidence.setdefault(record.evidence_role, []).append(
+                record.evidence_id
             )
             resolved.verify_current_artifact()
             if record.origin is EvidenceOrigin.PHASE03_AI_HANDOFF:
@@ -1256,16 +1271,99 @@ class Phase03GeologySynthesis(Phase):
             for model, conf in DEPOSIT_MODELS
         ]
 
+    def _criterion_evidence(self) -> tuple[CriterionEvidence, ...]:
+        """Measure what each 03A criterion actually has behind it after this run."""
+
+        def from_layers(*layers: str) -> tuple[int, tuple[str, ...]]:
+            counts = {name: self._layer_feature_counts.get(name, 0) for name in layers}
+            populated = {name: n for name, n in counts.items() if n > 0}
+            return sum(populated.values()), tuple(f"layer:{name}" for name in sorted(populated))
+
+        def from_role(role: EvidenceRole) -> tuple[int, tuple[str, ...]]:
+            ids = tuple(sorted(self._selected_role_evidence.get(role, ())))
+            return len(ids), ids
+
+        sources: dict[str, tuple[int, tuple[str, ...]]] = {
+            "favorable-geology": from_layers(
+                "geology_units_50k_polygon", "geology_units_200k_polygon"
+            ),
+            "structure-contact": from_layers(
+                "faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"
+            ),
+            "known-occurrence": from_layers(
+                "mineral_occurrences_point", "mineralized_points_point"
+            ),
+            "historical-geochemistry": from_role(EvidenceRole.GEOCHEMICAL_ANOMALY),
+            "metallogenic-context": from_layers(
+                "metallogenic_zones_polygon", "ore_district_node_context_polygon"
+            ),
+            "remote-sensing-alteration": from_role(EvidenceRole.ALTERATION_SUPPORT),
+            # Field mapping and pXRF are acquired in Phase 06, which this engine does not run.
+            "field-pxrf": (0, ()),
+            "access-workability": from_layers("source_material_route_line"),
+        }
+        items: list[CriterionEvidence] = []
+        for criterion_id, criterion, maximum in DEPOSIT_MODEL_SCORING_CRITERIA:
+            count, ids = sources[criterion_id]
+            detail = (
+                f"{count} feature(s) from {', '.join(ids)}"
+                if ids
+                else "no admitted evidence in this run"
+            )
+            items.append(CriterionEvidence(criterion_id, criterion, maximum, ids, count, detail))
+        return tuple(items)
+
+    def _observed_elements(self) -> tuple[str, ...]:
+        """Distinct element tokens actually measured in the admitted geochemical anomalies."""
+
+        found: set[str] = set()
+        for resolved in self._standalone_evidence:
+            if resolved.record.evidence_role is not EvidenceRole.GEOCHEMICAL_ANOMALY:
+                continue
+            try:
+                gdf = vector_io.read_layer(resolved.artifact, resolved.record.layer_name)
+            except Exception:  # noqa: BLE001 - a geochem layer that cannot be read adds no elements
+                continue
+            columns = {name.casefold(): name for name in gdf.columns}
+            column = next(
+                (columns[key] for key in _ELEMENT_COLUMNS if key in columns),
+                None,
+            )
+            if column is None:
+                continue
+            for raw in gdf[column].dropna().astype(str):
+                for token in raw.replace("/", ",").replace(";", ",").split(","):
+                    value = token.strip()
+                    if value and value.casefold() != "nan":
+                        found.add(value)
+        return tuple(sorted(found))
+
+    def _deposit_model_scores(self) -> dict[str, tuple]:
+        if self._model_scores is None:
+            self._model_scores = score_deposit_models(
+                self._criterion_evidence(),
+                observed_elements=self._observed_elements(),
+            )
+        return self._model_scores
+
+    def dominant_deposit_model(self) -> tuple[str, float]:
+        """The best-supported candidate model and its rubric total out of 100."""
+
+        scored = self._deposit_model_scores()
+        model = max(scored, key=lambda name: deposit_model_total(scored[name]))
+        return model, deposit_model_total(scored[model])
+
     def _score_matrix_rows(self) -> list[dict[str, object]]:
+        scored = self._deposit_model_scores()
         rows: list[dict[str, object]] = []
-        for criterion, pts in SCORING_CRITERIA:
+        for index, (criterion, pts) in enumerate(SCORING_CRITERIA):
             row: dict[str, object] = {"criterion": criterion, "max_points": pts}
             for model, _conf in DEPOSIT_MODELS:
-                row[model] = ""
+                row[model] = scored[model][index].proposed_points
             rows.append(row)
         total: dict[str, object] = {"criterion": "Total", "max_points": 100}
         for model, _conf in DEPOSIT_MODELS:
-            total[model] = ""
+            total[model] = deposit_model_total(scored[model])
         rows.append(total)
         return rows
 

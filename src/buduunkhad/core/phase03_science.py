@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal, Protocol, Self
+from typing import Annotated, Literal, NamedTuple, Protocol, Self
 
 from pydantic import (
     BaseModel,
@@ -59,6 +60,170 @@ DEPOSIT_MODEL_SCORING_CRITERIA: tuple[tuple[str, str, int], ...] = (
     ("field-pxrf", "Field mapping / pXRF support", 10),
     ("access-workability", "Access / workability", 5),
 )
+
+# How diagnostic each rubric criterion is for each candidate model, as a share of that criterion's
+# maximum. A structurally controlled vein earns the full structure weight; a placer earns little
+# from it. These shares express which evidence class discriminates which model — they are not
+# probabilities, and they never create evidence: a criterion with nothing assembled scores zero
+# for every model regardless of its share.
+DEPOSIT_MODEL_CRITERION_AFFINITY: dict[str, dict[str, float]] = {
+    "Au-Cu hydrothermal vein": {
+        "favorable-geology": 0.8,
+        "structure-contact": 1.0,
+        "known-occurrence": 1.0,
+        "historical-geochemistry": 1.0,
+        "metallogenic-context": 0.8,
+        "remote-sensing-alteration": 0.8,
+        "field-pxrf": 1.0,
+        "access-workability": 1.0,
+    },
+    "Intrusion-related Cu-Au-Mo": {
+        "favorable-geology": 1.0,
+        "structure-contact": 0.9,
+        "known-occurrence": 0.9,
+        "historical-geochemistry": 1.0,
+        "metallogenic-context": 0.9,
+        "remote-sensing-alteration": 1.0,
+        "field-pxrf": 1.0,
+        "access-workability": 1.0,
+    },
+    "Skarn / contact metasomatic": {
+        "favorable-geology": 1.0,
+        "structure-contact": 1.0,
+        "known-occurrence": 0.8,
+        "historical-geochemistry": 0.8,
+        "metallogenic-context": 0.7,
+        "remote-sensing-alteration": 0.7,
+        "field-pxrf": 1.0,
+        "access-workability": 1.0,
+    },
+    "Polymetallic vein": {
+        "favorable-geology": 0.7,
+        "structure-contact": 1.0,
+        "known-occurrence": 0.9,
+        "historical-geochemistry": 1.0,
+        "metallogenic-context": 0.7,
+        "remote-sensing-alteration": 0.5,
+        "field-pxrf": 1.0,
+        "access-workability": 1.0,
+    },
+    "VMS possibility": {
+        "favorable-geology": 0.9,
+        "structure-contact": 0.5,
+        "known-occurrence": 0.6,
+        "historical-geochemistry": 0.8,
+        "metallogenic-context": 0.6,
+        "remote-sensing-alteration": 0.5,
+        "field-pxrf": 1.0,
+        "access-workability": 1.0,
+    },
+    "Heavy mineral / placer": {
+        "favorable-geology": 0.4,
+        "structure-contact": 0.2,
+        "known-occurrence": 0.5,
+        "historical-geochemistry": 1.0,
+        "metallogenic-context": 0.4,
+        "remote-sensing-alteration": 0.3,
+        "field-pxrf": 0.8,
+        "access-workability": 1.0,
+    },
+}
+
+# Pathfinder elements that discriminate between models. Applied only to the geochemistry criterion
+# and only to elements actually measured in the assembled anomaly attributes.
+DEPOSIT_MODEL_ELEMENT_AFFINITY: dict[str, frozenset[str]] = {
+    "Au-Cu hydrothermal vein": frozenset({"au", "ag", "cu", "as", "sb", "te"}),
+    "Intrusion-related Cu-Au-Mo": frozenset({"cu", "mo", "au", "w", "bi", "re"}),
+    "Skarn / contact metasomatic": frozenset({"w", "sn", "cu", "zn", "fe", "bi", "mo"}),
+    "Polymetallic vein": frozenset({"pb", "zn", "ag", "ba", "cu", "sb", "mn"}),
+    "VMS possibility": frozenset({"cu", "zn", "pb", "ni", "co", "ba", "pyrite"}),
+    "Heavy mineral / placer": frozenset({"au", "sn", "ti", "zr", "cr", "pt", "w"}),
+}
+
+
+class CriterionEvidence(NamedTuple):
+    """What one 03A criterion actually has behind it after a run."""
+
+    criterion_id: str
+    criterion: str
+    max_points: int
+    evidence_ids: tuple[str, ...]
+    feature_count: int
+    detail: str
+
+    @property
+    def present(self) -> bool:
+        return bool(self.evidence_ids) and self.feature_count > 0
+
+
+def score_deposit_models(
+    evidence: Sequence[CriterionEvidence],
+    *,
+    observed_elements: Sequence[str] = (),
+) -> dict[str, tuple[DepositModelCriterionScore, ...]]:
+    """Score every candidate model against the rubric using only assembled evidence.
+
+    Deterministic and reproducible: the same evidence always yields the same matrix. A criterion
+    with no evidence is reported as missing at zero rather than estimated, so an unscored model is
+    visibly unscored instead of quietly averaged.
+    """
+
+    measured = {value.strip().casefold() for value in observed_elements if value.strip()}
+    scored: dict[str, tuple[DepositModelCriterionScore, ...]] = {}
+    for model, affinity in DEPOSIT_MODEL_CRITERION_AFFINITY.items():
+        rows: list[DepositModelCriterionScore] = []
+        for item in evidence:
+            share = affinity.get(item.criterion_id, 0.0)
+            if not item.present or share <= 0:
+                rows.append(
+                    DepositModelCriterionScore(
+                        criterion_id=item.criterion_id,
+                        criterion=item.criterion,
+                        max_points=item.max_points,
+                        proposed_points=0,
+                        rationale=(
+                            f"No evidence assembled for this criterion ({item.detail})."
+                            if not item.present
+                            else f"{item.criterion} is not diagnostic for {model}."
+                        ),
+                        missing=not item.present,
+                    )
+                )
+                continue
+            weight = share
+            note = ""
+            if item.criterion_id == "historical-geochemistry" and measured:
+                pathfinders = DEPOSIT_MODEL_ELEMENT_AFFINITY.get(model, frozenset())
+                matched = sorted(measured & pathfinders)
+                weight = share * (len(matched) / len(measured))
+                note = (
+                    f" Pathfinders matching {model}: {', '.join(matched)} of "
+                    f"{len(measured)} measured."
+                    if matched
+                    else f" No measured element is a {model} pathfinder."
+                )
+            points = round(item.max_points * weight, 1)
+            rows.append(
+                DepositModelCriterionScore(
+                    criterion_id=item.criterion_id,
+                    criterion=item.criterion,
+                    max_points=item.max_points,
+                    proposed_points=points,
+                    evidence_ids=tuple(sorted(set(item.evidence_ids))) if points > 0 else (),
+                    rationale=(
+                        f"{item.detail}; {item.criterion} carries {share:.0%} of its weight for "
+                        f"{model}.{note}"
+                    ),
+                    missing=False,
+                )
+            )
+        scored[model] = tuple(rows)
+    return scored
+
+
+def deposit_model_total(scores: Sequence[DepositModelCriterionScore]) -> float:
+    return round(sum(item.proposed_points for item in scores), 1)
+
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 NonEmpty = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
