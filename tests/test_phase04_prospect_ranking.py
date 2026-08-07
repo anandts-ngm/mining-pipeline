@@ -430,6 +430,59 @@ def test_phase04_delineates_prospects(raw_archive):
     )
 
 
+def test_phase04_scores_access_from_the_route_evidence_layer(raw_archive):
+    # Route lines reach Phase 04 as the canonical source_material_route_line layer. Access used to
+    # be matched on a "road" filename keyword, which that name never satisfies, so the criterion
+    # scored 0 while its evidence sat unread in the handover package.
+    import geopandas as gpd
+    from shapely.geometry import LineString, MultiLineString
+
+    config, register, _raw = raw_archive
+    ctx = _ctx(config, register)
+    _run_to_03(ctx)
+    _write_68(ctx, config)
+    Phase03GeologySynthesis().run(ctx)
+    _inject_evidence(config)
+
+    gpkg = _evidence_gpkg_03(config)
+    pts = vector_io.read_layer(gpkg, "mineralized_points_point")
+    coords = [(p.x, p.y) for p in (g.representative_point() for g in pts.geometry)]
+    track = LineString(
+        coords if len(coords) >= 2 else [coords[0], (coords[0][0] + 300, coords[0][1])]
+    )
+    row = dict.fromkeys(EVIDENCE_FIELDS, "")
+    row["feature_id"] = "BUD-RTE-0001"
+    row["validation_status"] = "Historical only"
+    routes = gpd.GeoDataFrame(  # ty: ignore[no-matching-overload]
+        [row], geometry=[MultiLineString([track])], crs=f"EPSG:{config.target_epsg}"
+    )
+    vector_io.write_layer(
+        routes.reindex(columns=[*EVIDENCE_FIELDS, "geometry"]),
+        gpkg,
+        layer="source_material_route_line",
+        mode="a",
+    )
+
+    phase = Phase04ProspectRanking()
+    phase.prepare(ctx)
+    assert phase.run(ctx).status == "ok"
+    assert phase._criteria_available["access"] is True
+    assert "access" not in phase._data_gaps
+
+    grid = vector_io.read_layer(
+        next((_p04_dir(config) / "03_Scoring_Matrix").glob("*Evidence_Score_Grid*.gpkg")),
+        "evidence_score_grid",
+    )
+    assert grid["score_access"].max() == next(w for k, w, _ in PROSPECT_CRITERIA if k == "access")
+    assert int((grid["score_access"] > 0).sum()) > 0
+
+    pp = next(
+        (_p04_dir(config) / "02_Prospect_Polygon_Delineation").glob("*Prospect_Polygons*.gpkg")
+    )
+    prospects = vector_io.read_layer(pp, "prospect_candidate_areas")
+    assert prospects["dist_road_m"].notna().all()
+
+
 def test_phase04_prospect_polygons_stay_inside_the_licence(raw_archive):
     # Cells are scored over the licence plus a context margin, so an unclipped cluster can reach
     # past the boundary and claim ground the licence does not cover.

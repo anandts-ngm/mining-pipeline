@@ -22,8 +22,8 @@ filenames, layer-name keywords, and directory proximity have no authority. Phase
 evidence remains ineligible until a separately approved authoritative integration adapter exists.
 
 **Honesty (invariant #8).** Criteria whose evidence is absent (``rs`` without fed alteration,
-``model_fit`` until an exact reviewed 03A adapter is selected, ``access`` until a separately
-reviewed exact-role adapter admits road evidence) score **0** and are flagged as data gaps. Every
+``access`` without route evidence in the handover, ``model_fit`` until Phase 03 emits a scored 03A
+matrix) score **0** and are flagged as data gaps. Every
 output is stamped *"Preliminary — not ore proof"* — class A is an expert-review signal, never a
 confirmed deposit or operational decision.
 """
@@ -75,6 +75,11 @@ CONTEXT_BUFFER_M = 1000.0  # grid the licence boundary + this context margin
 SCORE_THRESHOLD = 35  # the C floor: only A/B/C-band cells become prospect polygons (D excluded)
 OCCURRENCE_NEAR_M = 750.0  # "near a known occurrence" proximity (human-ref threshold)
 ACCESS_NEAR_M = 1500.0  # frozen comparator threshold; inactive until exact-role access evidence
+
+# Canonical Phase 03 schema layers carrying route/track access evidence. A manifest admits a layer
+# to this name only under evidence_role "access", so the name is an authorized binding — unlike the
+# filename keyword this previously matched on, which conferred no authority and never matched.
+_ACCESS_LAYERS = ["source_material_route_line"]
 
 _PROSPECT_LAYER = "prospect_candidate_areas"
 _GRID_LAYER = "evidence_score_grid"
@@ -379,12 +384,63 @@ class Phase04ProspectRanking(Phase):
         return gdf.iloc[0:0].copy()
 
     def _load_model_fit(self, ctx: RunContext) -> None:
-        """Keep model fit unavailable until an exact reviewed 03A adapter is selected."""
+        """Take the 03A rubric totals Phase 03 scored from its own assembled evidence.
 
-        del ctx
+        Bound to the canonical Phase 03 output name, exactly as the evidence GeoPackage is: a
+        workbook that merely sits in the folder under some other name still confers no authority.
+        """
+
+        import openpyxl
+
+        matrix = (
+            ctx.phase_dir("03")
+            / "10_Preliminary_Deposit_Model_03A"
+            / naming.data_name(
+                ctx.config.data_prefix,
+                "deposit_model_candidate_score_matrix",
+                version=1,
+                ext="xlsx",
+            )
+        )
+        if not matrix.is_file():
+            self._notes.append(
+                "03A model fit excluded: a workbook filename does not establish reviewed evidence "
+                "authority; no sealed Phase 03 score matrix was produced."
+            )
+            return
+        sheet = openpyxl.load_workbook(matrix, data_only=True).active
+        rows = list(sheet.iter_rows(values_only=True)) if sheet is not None else []
+        if len(rows) < 2 or not rows[0]:
+            self._notes.append("03A model fit excluded: the Phase 03 score matrix is unreadable.")
+            return
+        models = [str(name) for name in rows[0][2:] if name]
+        totals = next(
+            (row for row in rows[1:] if str(row[0]).strip().casefold() == "total"),
+            None,
+        )
+        scored = {
+            model: float(value)
+            for model, value in zip(models, (totals or ())[2:], strict=False)
+            if isinstance(value, int | float)
+        }
+        if not scored or max(scored.values()) <= 0:
+            self._notes.append(
+                "03A model fit scored zero: Phase 03 assembled no evidence the rubric can credit."
+            )
+            return
+        model = max(scored, key=lambda name: scored[name])
+        total = scored[model]
+        self._model_fit = {
+            # The 03A rubric is out of 100; §6.7 contributes 10 points to the prospect matrix.
+            "score": round(total / 10),
+            "model": model,
+            "label": f"03A rubric {total:g}/100 from Phase 03 evidence",
+            "available": True,
+        }
+        self._model_wired = True
         self._notes.append(
-            "03A model fit excluded: a workbook filename does not establish reviewed evidence "
-            "authority; the automated grid currently has no exact 03A adapter."
+            f"03A model fit taken from the sealed Phase 03 score matrix: {model} "
+            f"({total:g}/100 -> {self._model_fit['score']}/10)."
         )
 
     # ------------------------------------------------------------------ #
@@ -575,9 +631,7 @@ class Phase04ProspectRanking(Phase):
                 ["faults_structures_line", "dyke_vein_line", "intrusive_contacts_line"]
             ),
             "model_fit": bool(self._model_fit["available"]),
-            # Access stays unavailable until a separately reviewed exact-role adapter admits it.
-            # Filename or layer-name keywords never confer evidence authority.
-            "access": False,
+            "access": _has(_ACCESS_LAYERS),
             "confidence": True,  # §6.9 completeness is always derivable
         }
         # §6.9 confidence points = evidence completeness across the 7 evidence criteria.
@@ -610,7 +664,8 @@ class Phase04ProspectRanking(Phase):
             ),
             # model_fit (§6.7) + confidence (§6.9) are run-level (not spatial): applied uniformly.
             "model_fit": trues if int(str(self._model_fit["score"])) > 0 else falses,
-            "access": falses,
+            # access (§6.8): within reach of a mapped route/track.
+            "access": present(_ACCESS_LAYERS, ACCESS_NEAR_M),
             "confidence": trues if confidence_pts > 0 else falses,
         }
         # per-criterion points: spatial criteria award the full §6 band weight on presence;
@@ -659,7 +714,7 @@ class Phase04ProspectRanking(Phase):
             "dist_dyke_m": ev.get("dyke_vein_line"),
             "dist_occ_m": ev.get("mineral_occurrences_point"),
             "dist_min_point_m": ev.get("mineralized_points_point"),
-            "dist_road_m": next((ev[k] for k in ev if "road" in k.lower()), None),
+            "dist_road_m": next((ev[k] for k in _ACCESS_LAYERS if k in ev), None),
         }
         rows: list[dict] = []
         for _, cl in clusters.iterrows():
