@@ -109,8 +109,10 @@ _MINERALIZED_LAYER = "mineralized_points_point"
 _OCC_NAME_KEYS = ("цэгийн дугаар", "occurrence_name", "occurrence", "name", "point", "цэг", "id")
 _OCC_COMMODITY_KEYS = ("агуулга / элемент", "commodity", "element", "агуулга", "элемент", "mineral")
 
-# Attribute columns that carry measured element/commodity tokens on geochemical-anomaly layers.
-_ELEMENT_COLUMNS = ("main_element", "elements", "element", "commodity", "commodities")
+# Column-name prefixes that carry measured element/commodity tokens on geochemical-anomaly layers.
+# Matched by prefix in priority order because layers that have been through a shapefile keep only
+# the first ten characters of a field name: the real Buduunkhad halo layer spells it "main_eleme".
+_ELEMENT_COLUMN_PREFIXES = ("main_elem", "commodit", "element")
 
 # 6 candidate deposit models (03A) pre-seeded into the evidence table.
 DEPOSIT_MODELS: list[tuple[str, str]] = [
@@ -1324,9 +1326,14 @@ class Phase03GeologySynthesis(Phase):
                 gdf = vector_io.read_layer(resolved.artifact, resolved.record.layer_name)
             except Exception:  # noqa: BLE001 - a geochem layer that cannot be read adds no elements
                 continue
-            columns = {name.casefold(): name for name in gdf.columns}
+            columns = [(str(name).casefold(), name) for name in gdf.columns]
             column = next(
-                (columns[key] for key in _ELEMENT_COLUMNS if key in columns),
+                (
+                    original
+                    for prefix in _ELEMENT_COLUMN_PREFIXES
+                    for lowered, original in columns
+                    if lowered.startswith(prefix)
+                ),
                 None,
             )
             if column is None:
