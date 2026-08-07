@@ -265,9 +265,9 @@ class PhaseMethodology(BaseModel):
         coverage_ids = tuple(item.coverage_id for item in self.implementation_coverage)
         if len(set(coverage_ids)) != len(coverage_ids):
             raise ValueError("phase methodology contains duplicate coverage IDs")
-        if self.phase_id in {"00", "01", "02", "03"}:
+        if self.phase_id in {"00", "01", "02", "03", "04"}:
             if self.format_version != "1.1.0" or not self.implementation_coverage:
-                raise ValueError("Phase 00-03 methodology requires implementation coverage v1.1.0")
+                raise ValueError("Phase 00-04 methodology requires implementation coverage v1.1.0")
             referenced = {
                 requirement_id
                 for item in self.implementation_coverage
@@ -289,7 +289,7 @@ class PhaseMethodology(BaseModel):
             ):
                 raise ValueError("coverage ID does not match the phase")
         elif self.format_version != "1.0.0" or self.implementation_coverage:
-            raise ValueError("Phase 04-05 methodology remains at format v1.0.0")
+            raise ValueError("Phase 05 methodology remains at format v1.0.0")
         return self
 
 

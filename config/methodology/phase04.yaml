@@ -1,4 +1,4 @@
-format_version: 1.0.0
+format_version: 1.1.0
 phase_id: "04"
 requirements:
   - requirement_id: P04-PROPOSAL-ONLY-001
@@ -25,3 +25,88 @@ requirements:
     statement: An exact sealed Phase 03 run with passing deterministic QA/QC may feed automated Phase 04; unresolved or unavailable evidence remains zero-scored and explicit, while deterministic failures still block execution.
     source_refs: [repository.methodology-contracts, METH-DISC-031, METH-DISC-062, METH-DISC-067, METH-DISC-072, METH-DISC-076]
     status: adopted
+implementation_coverage:
+  - coverage_id: P04-COV-EVIDENCE-INTAKE-001
+    requirement_ids:
+      - P04-EVIDENCE-AUTHORITY-001
+      - P04-AI-ISOLATION-001
+    master_refs:
+      - methodology.master-v9::04.Phase 4.Evidence assembly for prospect delineation
+    guide_refs:
+      - phase04.guide::5.Alkham 4.Evidence overlay
+    resolution_refs:
+      - METH-DISC-076
+    adopted_behavior: Load Phase 03 handover layers and manifest-authorized attribute evidence by
+      exact identity and explicit evidence role, publish every contributing layer into the evidence
+      overlay, and never infer authority from a filename or directory.
+    implementation_refs:
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._load_evidence
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._load_attribute_evidence
+    output_refs:
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/01_Evidence_Overlay/XV023222_Buduunkhad_Evidence_Overlay_EPSG32647_v01.gpkg
+    qaqc_checks:
+      - Every scored criterion resolves through a manifest-bound artifact or a Phase 03 handover layer.
+      - Access evidence binds the canonical source_material_route_line layer, never a filename keyword.
+    test_refs:
+      - tests/test_phase04_prospect_ranking.py::test_phase04_uses_only_the_exact_legacy_evidence_package_identity
+      - tests/test_phase04_prospect_ranking.py::test_phase04_scores_access_from_the_route_evidence_layer
+    status: implemented
+  - coverage_id: P04-COV-SCORING-GRID-001
+    requirement_ids:
+      - P04-SCORING-MATRIX-PRESERVATION-001
+      - P04-LEGACY-COMPARATOR-001
+    master_refs:
+      - methodology.master-v9::04.Phase 4.Desktop evidence scoring
+    guide_refs:
+      - phase04.guide::6.Desktop scoring matrix
+    resolution_refs:
+      - METH-DISC-006
+    adopted_behavior: Score a 250 m grid over the licence plus context margin on the guide's eight
+      weighted criteria summing to 100, taking deposit-model fit from the sealed Phase 03 03A score
+      matrix, and record a criterion with no evidence as an explicit zero rather than an estimate.
+    implementation_refs:
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._score_cells
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._load_model_fit
+    output_refs:
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/03_Scoring_Matrix/XV023222_Buduunkhad_Evidence_Score_Grid_EPSG32647_v01.gpkg
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/05_A_B_C_D_Field_Priority/XV-023222_Buduunkhad_Phase4_Legacy_Comparator_Technical_Log_v01.xlsx
+    qaqc_checks:
+      - The eight criterion weights sum to 100 and remain unchanged across runs.
+      - A criterion without admitted evidence scores zero and is named in the data-gap register.
+    test_refs:
+      - tests/test_phase04_prospect_ranking.py::test_prospect_criteria_sum_100
+      - tests/test_phase04_prospect_ranking.py::test_phase04_real_run_grid_and_gate
+    status: implemented
+  - coverage_id: P04-COV-PROSPECT-DELIVERABLES-001
+    requirement_ids:
+      - P04-PROPOSAL-ONLY-001
+      - P04-GATE-PROVISIONAL-001
+    master_refs:
+      - methodology.master-v9::04.Phase 4.Preliminary prospect delineation and ranking
+    guide_refs:
+      - phase04.guide::10.Deliverables
+    resolution_refs:
+      - METH-DISC-068
+      - METH-DISC-076
+    adopted_behavior: Dissolve qualifying cells into ranked prospect polygons clipped to the licence,
+      classify them A/B/C/D from the band thresholds, and emit the ranking table, data-gap register,
+      Go/No-Go matrix and ranking map with every product stamped preliminary rather than ore proof.
+    implementation_refs:
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._delineate_and_rank
+      - src/buduunkhad/phases/phase04_prospect_ranking.py::Phase04ProspectRanking._build_prospects
+    output_refs:
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/02_Prospect_Polygon_Delineation/XV023222_Buduunkhad_Prospect_Polygons_EPSG32647_v01.gpkg
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/03_Scoring_Matrix/XV-023222_Buduunkhad_Prospect_Ranking_Table_v01.xlsx
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/04_Confidence_DataGap_NextAction/XV-023222_Buduunkhad_Prospect_DataGap_and_NextAction_v01.xlsx
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/05_A_B_C_D_Field_Priority/XV-023222_Buduunkhad_Go_NoGo_Desktop_Decision_Matrix_v01.xlsx
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/05_A_B_C_D_Field_Priority/XV-023222_Buduunkhad_Preliminary_Prospect_Ranking_Map.pdf
+      - 04_Phase_4_Preliminary_Prospect_Delineation_and_Ranking/XV-023222_Buduunkhad_Phase04_QAQC_Log.xlsx
+    qaqc_checks:
+      - Every delivered prospect polygon lies inside the licence boundary and its area_ha describes
+        the clipped geometry.
+      - Each polygon's class matches the band its max_score falls in, and the ranking table has one
+        row per delivered polygon.
+    test_refs:
+      - tests/test_phase04_prospect_ranking.py::test_phase04_delineates_prospects
+      - tests/test_phase04_prospect_ranking.py::test_phase04_prospect_polygons_stay_inside_the_licence
+    status: implemented
